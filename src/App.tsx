@@ -313,7 +313,7 @@ export default function App() {
 
   const role = useMemo(() => {
     if (!session?.user) return null;
-    return session.user.user_metadata?.role as 'seller' | 'buyer' | undefined;
+    return session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined;
   }, [session]);
 
   useEffect(() => {
@@ -324,10 +324,20 @@ export default function App() {
 
   useEffect(() => {
     // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        setSession(session);
+      } catch (err: any) {
+        console.error('Auth session error:', err);
+        setError('Lỗi xác thực người dùng. Vui lòng thử lại.');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -351,36 +361,46 @@ export default function App() {
   async function fetchProducts() {
     try {
       setLoading(true);
+      setError(null);
+      
       let query = supabase.from('products').select('*');
       
       if (role === 'seller' && activeTab === 'my-products') {
-        query = query.eq('seller_id', session?.user.id);
+        if (session?.user?.id) {
+          query = query.eq('seller_id', session?.user?.id);
+        } else {
+          setProducts([]);
+          return;
+        }
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
+      const { data, error: fetchError } = await query;
+      if (fetchError) throw fetchError;
       setProducts(data || []);
     } catch (err: any) {
       console.error('Error fetching products:', err);
-      setError(err.message || 'Không thể tải danh sách sản phẩm');
+      setError(err.message || 'Không thể tải danh sách sản phẩm. Vui lòng kiểm tra kết nối.');
     } finally {
       setLoading(false);
     }
   }
 
   async function fetchOrders() {
+    if (!session?.user?.id) return;
+    
     try {
       setReportsLoading(true);
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('orders')
         .select('*')
-        .eq('seller_id', session?.user.id)
+        .eq('seller_id', session?.user?.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
       setOrders(data || []);
     } catch (err: any) {
       console.error('Error fetching orders:', err);
+      // Don't set global error for background report loading
     } finally {
       setReportsLoading(false);
     }
@@ -388,7 +408,10 @@ export default function App() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user.id) return;
+    if (!session?.user?.id) {
+      alert('Vui lòng đăng nhập để thực hiện thao tác này');
+      return;
+    }
     if (!editingProduct && !selectedFile) {
       alert('Vui lòng chọn ảnh hoặc video sản phẩm');
       return;
@@ -400,9 +423,9 @@ export default function App() {
       let imageUrl = editingProduct?.image || '';
 
       // 1. Upload file if selected
-      if (selectedFile) {
-        const fileName = `${Date.now()}_${selectedFile.name}`;
-        const filePath = `${session.user.id}/${fileName}`;
+      if (selectedFile && session?.user?.id) {
+        const fileName = `${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
+        const filePath = `${session?.user?.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('assets')
@@ -418,8 +441,8 @@ export default function App() {
       }
 
       // 2. Insert or Update product
-      if (editingProduct) {
-        const { error } = await supabase
+      if (editingProduct && session?.user?.id) {
+        const { error: updateError } = await supabase
           .from('products')
           .update({
             name: newProduct.name,
@@ -428,20 +451,20 @@ export default function App() {
             image: imageUrl
           })
           .eq('id', editingProduct.id)
-          .eq('seller_id', session.user.id); // Security check
+          .eq('seller_id', session?.user?.id); // Security check
 
-        if (error) throw error;
+        if (updateError) throw updateError;
         alert('Cập nhật sản phẩm thành công!');
-      } else {
-        const { error } = await supabase.from('products').insert([{
+      } else if (session?.user?.id) {
+        const { error: insertError } = await supabase.from('products').insert([{
           name: newProduct.name,
           price: Number(newProduct.price),
           category: newProduct.category,
           image: imageUrl,
-          seller_id: session.user.id
+          seller_id: session?.user?.id
         }]);
 
-        if (error) throw error;
+        if (insertError) throw insertError;
         alert('Thêm sản phẩm thành công!');
       }
       
@@ -451,28 +474,29 @@ export default function App() {
       setSelectedFile(null);
       fetchProducts();
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      alert('Lỗi: ' + (err.message || 'Đã có lỗi xảy ra khi lưu sản phẩm'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteProduct = async (id: number) => {
+    if (!session?.user?.id) return;
     if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return;
 
     try {
       setLoading(true);
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from('products')
         .delete()
         .eq('id', id)
-        .eq('seller_id', session?.user.id); // Security check
+        .eq('seller_id', session?.user?.id); // Security check
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
       alert('Đã xóa sản phẩm');
       fetchProducts();
     } catch (err: any) {
-      alert('Lỗi xóa sản phẩm: ' + err.message);
+      alert('Lỗi xóa sản phẩm: ' + (err.message || 'Không thể xóa sản phẩm'));
     } finally {
       setLoading(false);
     }
@@ -658,7 +682,7 @@ export default function App() {
               <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-0.5">
                 {role === 'seller' ? 'Người bán' : 'Người mua'}
               </p>
-              <p className="text-sm font-bold text-gray-900">{session.user.email}</p>
+              <p className="text-sm font-bold text-gray-900">{session?.user?.email}</p>
             </div>
             <button
               onClick={handleLogout}
