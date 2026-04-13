@@ -15,9 +15,9 @@ export const supabase = createClient(
       fetch: (input, init) => window.fetch(input, init),
     },
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
     }
   }
 );

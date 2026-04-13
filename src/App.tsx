@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap, Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap, Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign, LogIn, UserPlus, LogOut, Mail, Lock, Store, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 interface Product {
   id: number;
@@ -27,7 +28,158 @@ interface Order {
   items: any;
 }
 
+function AuthForm() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'seller' | 'buyer'>('buyer');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: { role }
+          }
+        });
+        if (error) throw error;
+        alert('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu có).');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Đã có lỗi xảy ra');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] p-6">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-[#E9ECEF] p-8"
+      >
+        <div className="flex flex-col items-center mb-8">
+          <div className="bg-blue-600 p-3 rounded-2xl mb-4 shadow-lg shadow-blue-600/20">
+            <Zap className="text-white w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-black tracking-tight">POS Pro</h1>
+          <p className="text-gray-500 font-medium">{isLogin ? 'Chào mừng bạn quay trở lại' : 'Tạo tài khoản mới'}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
+                placeholder="example@email.com"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Mật khẩu</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+
+          {!isLogin && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Bạn là ai?</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRole('buyer')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                    role === 'buyer' 
+                      ? 'border-blue-600 bg-blue-50 text-blue-600' 
+                      : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'
+                  }`}
+                >
+                  <User className="w-6 h-6" />
+                  <span className="text-xs font-bold">Người mua</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('seller')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                    role === 'seller' 
+                      ? 'border-blue-600 bg-blue-50 text-blue-600' 
+                      : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'
+                  }`}
+                >
+                  <Store className="w-6 h-6" />
+                  <span className="text-xs font-bold">Người bán</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-sm font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
+          >
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : isLogin ? (
+              <LogIn className="w-5 h-5" />
+            ) : (
+              <UserPlus className="w-5 h-5" />
+            )}
+            {isLogin ? 'Đăng nhập' : 'Đăng ký'}
+          </button>
+        </form>
+
+        <div className="mt-8 pt-6 border-t border-[#E9ECEF] text-center">
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
+          >
+            {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'pos' | 'reports'>('pos');
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -36,7 +188,29 @@ export default function App() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const role = useMemo(() => {
+    if (!session?.user) return null;
+    return (session.user.user_metadata?.role as 'seller' | 'buyer') || 'buyer';
+  }, [session]);
+
   useEffect(() => {
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+
     async function fetchProducts() {
       try {
         setLoading(true);
@@ -55,13 +229,13 @@ export default function App() {
     }
 
     fetchProducts();
-  }, []);
+  }, [session]);
 
   useEffect(() => {
-    if (activeTab === 'reports') {
+    if (activeTab === 'reports' && role === 'seller') {
       fetchOrders();
     }
-  }, [activeTab]);
+  }, [activeTab, role]);
 
   async function fetchOrders() {
     try {
@@ -150,9 +324,25 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthForm />;
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
-      {/* Navbar */}
+      {/* Navbar - Only show tabs for seller */}
       <nav className="bg-white border-b border-[#E9ECEF] px-6 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center h-16">
           <div className="flex items-center gap-8">
@@ -163,40 +353,54 @@ export default function App() {
               <span className="text-xl font-bold tracking-tight">POS Pro</span>
             </div>
             
-            <div className="flex gap-1">
-              <button
-                onClick={() => setActiveTab('pos')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeTab === 'pos' 
-                    ? 'bg-blue-50 text-blue-600' 
-                    : 'text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                Bán hàng
-              </button>
-              <button
-                onClick={() => setActiveTab('reports')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeTab === 'reports' 
-                    ? 'bg-blue-50 text-blue-600' 
-                    : 'text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                Báo cáo
-              </button>
-            </div>
+            {role === 'seller' && (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setActiveTab('pos')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'pos' 
+                      ? 'bg-blue-50 text-blue-600' 
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Bán hàng
+                </button>
+                <button
+                  onClick={() => setActiveTab('reports')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'reports' 
+                      ? 'bg-blue-50 text-blue-600' 
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  Báo cáo
+                </button>
+              </div>
+            )}
           </div>
           
-          <div className="text-sm text-gray-500 font-medium hidden md:block">
-            {new Date().toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                {role === 'seller' ? 'Người bán' : 'Người mua'}
+              </p>
+              <p className="text-sm font-bold text-gray-700">{session.user.email}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+              title="Đăng xuất"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </nav>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'pos' ? (
+        {activeTab === 'pos' || role === 'buyer' ? (
           <motion.main
             key="pos"
             initial={{ opacity: 0, y: 10 }}
@@ -209,7 +413,7 @@ export default function App() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Utensils className="w-6 h-6 text-blue-600" />
-                  Danh sách Sản phẩm
+                  {role === 'seller' ? 'Danh sách Sản phẩm' : 'Thực đơn hôm nay'}
                 </h2>
                 <div className="flex gap-2">
                   <span className="px-3 py-1 bg-white border border-[#E9ECEF] rounded-full text-xs font-medium text-gray-600">Tất cả</span>
@@ -265,7 +469,7 @@ export default function App() {
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
                         >
                           <Plus className="w-5 h-5" />
-                          Thêm vào giỏ
+                          {role === 'seller' ? 'Thêm vào giỏ' : 'Chọn món'}
                         </button>
                       </div>
                     </motion.div>
@@ -279,7 +483,7 @@ export default function App() {
               <div className="p-6 border-b border-[#E9ECEF]">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5 text-blue-600" />
-                  Đơn hàng hiện tại
+                  {role === 'seller' ? 'Đơn hàng hiện tại' : 'Giỏ hàng của bạn'}
                 </h2>
               </div>
 
@@ -362,7 +566,7 @@ export default function App() {
                   ) : (
                     <CreditCard className="w-6 h-6" />
                   )}
-                  {loading ? 'Đang xử lý...' : 'Thanh toán ngay'}
+                  {loading ? 'Đang xử lý...' : role === 'seller' ? 'Thanh toán ngay' : 'Đặt hàng ngay'}
                 </button>
               </div>
             </section>
