@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap, Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from './lib/supabase';
 
 interface Product {
   id: number;
@@ -19,15 +20,32 @@ interface CartItem extends Product {
   quantity: number;
 }
 
-const PRODUCTS: Product[] = [
-  { id: 1, name: 'Cà phê sữa đá', price: 25000, category: 'Đồ uống', image: 'https://picsum.photos/seed/coffee/400/300' },
-  { id: 2, name: 'Trà sữa trân châu', price: 35000, category: 'Đồ uống', image: 'https://picsum.photos/seed/milktea/400/300' },
-  { id: 3, name: 'Bánh mì thịt', price: 20000, category: 'Thức ăn', image: 'https://picsum.photos/seed/bread/400/300' },
-  { id: 4, name: 'Nước cam ép', price: 30000, category: 'Đồ uống', image: 'https://picsum.photos/seed/orange/400/300' },
-];
-
 export default function App() {
+  const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('Product')
+          .select('*');
+
+        if (error) throw error;
+        setProducts(data || []);
+      } catch (err: any) {
+        console.error('Error fetching products:', err);
+        setError(err.message || 'Không thể tải danh sách sản phẩm');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchProducts();
+  }, []);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -88,43 +106,65 @@ export default function App() {
             </h2>
             <div className="flex gap-2">
               <span className="px-3 py-1 bg-white border border-[#E9ECEF] rounded-full text-xs font-medium text-gray-600">Tất cả</span>
-              <span className="px-3 py-1 bg-white border border-[#E9ECEF] rounded-full text-xs font-medium text-gray-400">Đồ uống</span>
-              <span className="px-3 py-1 bg-white border border-[#E9ECEF] rounded-full text-xs font-medium text-gray-400">Thức ăn</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {PRODUCTS.map((product) => (
-              <motion.div
-                key={product.id}
-                whileHover={{ y: -4 }}
-                className="bg-white rounded-2xl border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-md transition-all group"
+          {loading ? (
+            <div className="h-64 flex flex-col items-center justify-center text-gray-400 gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <p className="font-medium">Đang tải sản phẩm...</p>
+            </div>
+          ) : error ? (
+            <div className="h-64 flex flex-col items-center justify-center text-red-500 gap-3 bg-red-50 rounded-2xl border border-red-100 p-6">
+              <AlertCircle className="w-10 h-10" />
+              <p className="font-bold text-lg">Lỗi tải dữ liệu</p>
+              <p className="text-sm text-center max-w-xs">{error}</p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-sm"
               >
-                <div className="h-40 overflow-hidden relative">
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-blue-600">
-                    {product.category}
+                Thử lại
+              </button>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="h-64 flex flex-col items-center justify-center text-gray-400 gap-3">
+              <Utensils className="w-10 h-10 opacity-20" />
+              <p className="font-medium">Không tìm thấy sản phẩm nào trong bảng 'Product'</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {products.map((product) => (
+                <motion.div
+                  key={product.id}
+                  whileHover={{ y: -4 }}
+                  className="bg-white rounded-2xl border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-md transition-all group"
+                >
+                  <div className="h-40 overflow-hidden relative">
+                    <img
+                      src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-blue-600">
+                      {product.category}
+                    </div>
                   </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="font-bold text-lg mb-1">{product.name}</h3>
-                  <p className="text-blue-600 font-bold text-xl mb-4">{formatPrice(product.price)}</p>
-                  <button
-                    onClick={() => addToCart(product)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Thêm vào giỏ
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                  <div className="p-4">
+                    <h3 className="font-bold text-lg mb-1">{product.name}</h3>
+                    <p className="text-blue-600 font-bold text-xl mb-4">{formatPrice(product.price)}</p>
+                    <button
+                      onClick={() => addToCart(product)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Thêm vào giỏ
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Right Side: Shopping Cart (40%) */}
