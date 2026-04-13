@@ -311,9 +311,18 @@ export default function App() {
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  // Supabase Config Check
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
   const role = useMemo(() => {
-    if (!session?.user) return null;
-    return session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined;
+    try {
+      if (!session?.user) return null;
+      return session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined;
+    } catch (err) {
+      console.error('Error parsing role:', err);
+      return null;
+    }
   }, [session]);
 
   useEffect(() => {
@@ -326,12 +335,14 @@ export default function App() {
     // Initial session check
     const checkSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        setSession(session);
+        setAuthLoading(true);
+        setError(null);
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        setSession(currentSession);
       } catch (err: any) {
         console.error('Auth session error:', err);
-        setError('Lỗi xác thực người dùng. Vui lòng thử lại.');
+        setError('Lỗi xác thực hệ thống. Vui lòng tải lại trang.');
       } finally {
         setAuthLoading(false);
       }
@@ -340,8 +351,8 @@ export default function App() {
     checkSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
     });
 
     return () => subscription.unsubscribe();
@@ -366,8 +377,9 @@ export default function App() {
       let query = supabase.from('products').select('*');
       
       if (role === 'seller' && activeTab === 'my-products') {
-        if (session?.user?.id) {
-          query = query.eq('seller_id', session?.user?.id);
+        const userId = session?.user?.id;
+        if (userId) {
+          query = query.eq('seller_id', userId);
         } else {
           setProducts([]);
           return;
@@ -386,21 +398,21 @@ export default function App() {
   }
 
   async function fetchOrders() {
-    if (!session?.user?.id) return;
+    const userId = session?.user?.id;
+    if (!userId) return;
     
     try {
       setReportsLoading(true);
       const { data, error: fetchError } = await supabase
         .from('orders')
         .select('*')
-        .eq('seller_id', session?.user?.id)
+        .eq('seller_id', userId)
         .order('created_at', { ascending: false });
 
       if (fetchError) throw fetchError;
       setOrders(data || []);
     } catch (err: any) {
       console.error('Error fetching orders:', err);
-      // Don't set global error for background report loading
     } finally {
       setReportsLoading(false);
     }
@@ -601,10 +613,38 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
+  // Safety check for environment variables
+  if (!supabaseUrl || !supabaseKey) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center">
+        <AlertCircle className="w-16 h-16 text-red-600 mb-4" />
+        <h1 className="text-2xl font-black text-red-900 mb-2">Thiếu cấu hình Supabase</h1>
+        <p className="text-red-700 max-w-md">Vui lòng kiểm tra các biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trong cài đặt dự án của bạn.</p>
+      </div>
+    );
+  }
+
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8F9FA] gap-4">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+        <p className="text-gray-500 font-bold animate-pulse">Đang tải hệ thống...</p>
+      </div>
+    );
+  }
+
+  if (error && !session) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+        <h2 className="text-xl font-bold mb-2">Đã có lỗi xảy ra</h2>
+        <p className="text-gray-500 mb-6">{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-blue-600/20"
+        >
+          Tải lại trang
+        </button>
       </div>
     );
   }
@@ -615,10 +655,13 @@ export default function App() {
 
   if (!role) {
     return <RoleSelection onSelect={(selectedRole) => {
-      // Refresh session to get updated metadata
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-      });
+      try {
+        supabase.auth.getSession().then(({ data: { session: updatedSession } }) => {
+          setSession(updatedSession);
+        });
+      } catch (err) {
+        console.error('Error refreshing session:', err);
+      }
     }} />;
   }
 
