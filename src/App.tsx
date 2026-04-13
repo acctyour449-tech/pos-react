@@ -237,7 +237,8 @@ export default function App() {
 
   // Seller specific state
   const [showAddProduct, setShowAddProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm', image: '' });
+  const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const role = useMemo(() => {
     if (!session?.user) return null;
@@ -316,13 +317,35 @@ export default function App() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user.id) return;
+    if (!session?.user.id || !selectedFile) {
+      alert('Vui lòng chọn ảnh hoặc video sản phẩm');
+      return;
+    }
 
     try {
       setLoading(true);
+      
+      // 1. Upload file to Supabase Storage
+      const fileName = `${Date.now()}_${selectedFile.name}`;
+      const filePath = `${session.user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(filePath, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('assets')
+        .getPublicUrl(filePath);
+
+      // 3. Insert product into database
       const { error } = await supabase.from('products').insert([{
-        ...newProduct,
+        name: newProduct.name,
         price: Number(newProduct.price),
+        category: newProduct.category,
+        image: publicUrl,
         seller_id: session.user.id
       }]);
 
@@ -330,7 +353,8 @@ export default function App() {
       
       alert('Thêm sản phẩm thành công!');
       setShowAddProduct(false);
-      setNewProduct({ name: '', price: '', category: 'Thực phẩm', image: '' });
+      setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
+      setSelectedFile(null);
       fetchProducts();
     } catch (err: any) {
       alert('Lỗi: ' + err.message);
@@ -380,6 +404,12 @@ export default function App() {
   const totalRevenue = useMemo(() => {
     return orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0);
   }, [orders]);
+
+  const isVideo = (url: string) => {
+    if (!url) return false;
+    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov'];
+    return videoExtensions.some(ext => url.toLowerCase().split('?')[0].endsWith(ext));
+  };
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
@@ -557,12 +587,20 @@ export default function App() {
                 products.map((product) => (
                   <div key={product.id} className="bg-white rounded-3xl border border-[#E9ECEF] overflow-hidden shadow-sm group">
                     <div className="h-48 overflow-hidden relative">
-                      <img
-                        src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        referrerPolicy="no-referrer"
-                      />
+                      {isVideo(product.image) ? (
+                        <video 
+                          src={product.image} 
+                          controls 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
                       <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-wider">
                         {product.category}
                       </div>
@@ -633,15 +671,21 @@ export default function App() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Link ảnh sản phẩm</label>
-                        <input
-                          type="url"
-                          required
-                          value={newProduct.image}
-                          onChange={(e) => setNewProduct({...newProduct, image: e.target.value})}
-                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
-                          placeholder="https://images.unsplash.com/..."
-                        />
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Ảnh hoặc Video sản phẩm</label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            required
+                            accept="image/*,video/*"
+                            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+                          />
+                        </div>
+                        {selectedFile && (
+                          <p className="text-[10px] font-bold text-blue-600 mt-1">
+                            Đã chọn: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-4 pt-4">
                         <button
@@ -845,12 +889,20 @@ export default function App() {
                         className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/5 transition-all group"
                       >
                         <div className="h-64 overflow-hidden relative">
-                          <img
-                            src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
-                            alt={product.name}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                            referrerPolicy="no-referrer"
-                          />
+                          {isVideo(product.image) ? (
+                            <video 
+                              src={product.image} 
+                              controls 
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <img
+                              src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
+                              alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
                           <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">
                             {product.category}
                           </div>
