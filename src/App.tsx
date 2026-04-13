@@ -28,6 +28,13 @@ interface Order {
   total_price: number;
   items: any;
   seller_id: string;
+  status: string;
+}
+
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error';
 }
 
 function AuthForm() {
@@ -304,6 +311,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCart, setShowCart] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
 
   // Seller specific state
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -529,6 +546,7 @@ export default function App() {
       // Check if trying to add from a different seller
       if (prev.length > 0 && prev[0].seller_id !== product.seller_id) {
         if (confirm('Giỏ hàng hiện tại chứa sản phẩm của người bán khác. Bạn có muốn làm trống giỏ hàng để thêm sản phẩm này không?')) {
+          showToast('Đã làm mới giỏ hàng với sản phẩm mới', 'success');
           return [{ ...product, quantity: 1 }];
         }
         return prev;
@@ -536,10 +554,12 @@ export default function App() {
 
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
+        showToast(`Đã tăng số lượng ${product.name}`, 'success');
         return prev.map(item =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
+      showToast(`Đã thêm ${product.name} vào giỏ`, 'success');
       return [...prev, { ...product, quantity: 1 }];
     });
   };
@@ -585,6 +605,7 @@ export default function App() {
       const orderData = {
         total_price: total,
         seller_id: cart[0].seller_id,
+        status: 'Chờ xác nhận',
         items: cart.map(item => ({
           id: item.id,
           name: item.name,
@@ -599,13 +620,33 @@ export default function App() {
 
       if (checkoutError) throw checkoutError;
 
-      alert('Gửi đơn hàng thành công!');
+      showToast('Đặt hàng thành công! Đang chờ người bán xác nhận', 'success');
       setCart([]);
+      setShowCart(false);
     } catch (err: any) {
       console.error('Checkout error:', err);
-      alert('Lỗi đặt hàng: ' + (err.message || 'Không thể lưu đơn hàng'));
+      showToast('Lỗi đặt hàng: ' + (err.message || 'Không thể lưu đơn hàng'), 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: number, newStatus: string) => {
+    try {
+      setReportsLoading(true);
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+
+      if (updateError) throw updateError;
+      
+      showToast(`Đã cập nhật trạng thái: ${newStatus}`, 'success');
+      fetchOrders();
+    } catch (err: any) {
+      showToast('Lỗi cập nhật trạng thái: ' + err.message, 'error');
+    } finally {
+      setReportsLoading(false);
     }
   };
 
@@ -667,6 +708,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
+      {/* Toast Notifications */}
+      <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+              className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md ${
+                toast.type === 'success' 
+                  ? 'bg-green-500/90 border-green-400 text-white' 
+                  : 'bg-red-500/90 border-red-400 text-white'
+              }`}
+            >
+              {toast.type === 'success' ? <Zap className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <span className="font-bold text-sm">{toast.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Navbar */}
       <nav className="bg-white border-b border-[#E9ECEF] px-6 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center h-20">
@@ -721,6 +784,19 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
+            {role === 'buyer' && (
+              <button 
+                onClick={() => setShowCart(true)}
+                className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group"
+              >
+                <ShoppingCart className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
+                {(cart || []).length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-lg">
+                    {(cart || []).length}
+                  </span>
+                )}
+              </button>
+            )}
             <div className="text-right hidden sm:block">
               <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-0.5">
                 {role === 'seller' ? 'Người bán' : 'Người mua'}
@@ -1034,16 +1110,55 @@ export default function App() {
                             <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleTimeString('vi-VN')}</p>
                           </td>
                           <td className="px-8 py-6">
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap gap-1 mb-2">
                               {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
                                 <span key={idx} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">
                                   {item.name} x{item.quantity}
                                 </span>
                               ))}
                             </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                order.status === 'Hoàn thành' ? 'bg-green-100 text-green-600' :
+                                order.status === 'Chờ xác nhận' ? 'bg-orange-100 text-orange-600' :
+                                'bg-blue-100 text-blue-600'
+                              }`}>
+                                {order.status || 'Chờ xác nhận'}
+                              </span>
+                            </div>
                           </td>
-                          <td className="px-8 py-6 text-sm font-black text-right text-blue-600">
-                            {formatPrice(order.total_price)}
+                          <td className="px-8 py-6">
+                            <div className="flex flex-col gap-2">
+                              <p className="text-sm font-black text-right text-blue-600 mb-2">
+                                {formatPrice(order.total_price)}
+                              </p>
+                              <div className="flex justify-end gap-1">
+                                {order.status === 'Chờ xác nhận' && (
+                                  <button 
+                                    onClick={() => updateOrderStatus(order.id, 'Đang chuẩn bị')}
+                                    className="text-[10px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                                  >
+                                    Xác nhận
+                                  </button>
+                                )}
+                                {order.status === 'Đang chuẩn bị' && (
+                                  <button 
+                                    onClick={() => updateOrderStatus(order.id, 'Đang giao')}
+                                    className="text-[10px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                                  >
+                                    Giao hàng
+                                  </button>
+                                )}
+                                {order.status === 'Đang giao' && (
+                                  <button 
+                                    onClick={() => updateOrderStatus(order.id, 'Hoàn thành')}
+                                    className="text-[10px] font-black bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors"
+                                  >
+                                    Hoàn thành
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -1061,8 +1176,8 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             className="flex h-[calc(100vh-80px)]"
           >
-            {/* Left Side: Marketplace Feed (65%) */}
-            <section className="w-[65%] p-8 overflow-y-auto border-r border-[#E9ECEF]">
+            {/* Left Side: Marketplace Feed (Full width for better UX) */}
+            <section className="w-full p-8 overflow-y-auto">
               <div className="max-w-4xl mx-auto space-y-10">
                 <div className="flex flex-col gap-6">
                   <div className="flex justify-between items-end">
@@ -1169,117 +1284,133 @@ export default function App() {
               </div>
             </section>
 
-            {/* Right Side: Modern Cart (35%) */}
-            <section className="w-[35%] bg-white flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-10">
-              <div className="p-8 border-b border-[#E9ECEF] flex justify-between items-center">
-                <h2 className="text-2xl font-black flex items-center gap-3">
-                  <ShoppingCart className="w-6 h-6 text-blue-600" />
-                  Giỏ hàng
-                </h2>
-                {cart.length > 0 && (
-                  <span className="bg-blue-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full">
-                    {cart.length} MÓN
-                  </span>
-                )}
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                <AnimatePresence mode="popLayout">
-                  {(cart || []).length === 0 ? (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4"
-                    >
-                      <div className="bg-gray-50 p-10 rounded-[2.5rem]">
-                        <ShoppingBag className="w-16 h-16 opacity-10" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-gray-900">Giỏ hàng trống</p>
-                        <p className="text-sm font-medium">Hãy chọn những món đồ bạn yêu thích</p>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    (cart || []).map((item) => (
-                      <motion.div
-                        key={item.id}
-                        layout
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        className="flex items-center gap-5 p-5 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] relative group"
+            {/* Modern Cart Sidebar */}
+            <AnimatePresence>
+              {showCart && (
+                <div className="fixed inset-0 z-[60] flex justify-end">
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowCart(false)}
+                    className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                  />
+                  <motion.section 
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl"
+                  >
+                    <div className="p-8 border-b border-[#E9ECEF] flex justify-between items-center bg-white sticky top-0 z-10">
+                      <h2 className="text-2xl font-black flex items-center gap-3">
+                        <ShoppingCart className="w-6 h-6 text-blue-600" />
+                        Giỏ hàng
+                      </h2>
+                      <button 
+                        onClick={() => setShowCart(false)}
+                        className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
                       >
-                        <img
-                          src={item.image}
-                          alt={item.name}
-                          className="w-20 h-20 rounded-2xl object-cover shadow-sm"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-black text-base truncate">{item.name}</h4>
-                          <p className="text-blue-600 font-black text-sm mb-2">{formatPrice(item.price)}</p>
-                          <div className="flex items-center gap-4 bg-white border border-[#E9ECEF] rounded-xl p-1 w-fit shadow-sm">
-                            <button
-                              onClick={() => updateQuantity(item.id, -1)}
-                              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                            <span className="font-black text-sm min-w-[20px] text-center">{item.quantity}</span>
-                            <button
-                              onClick={() => updateQuantity(item.id, 1)}
-                              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => removeFromCart(item.id)}
-                          className="p-3 text-gray-300 hover:text-red-500 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </motion.div>
-                    ))
-                  )}
-                </AnimatePresence>
-              </div>
+                        <Trash2 className="w-5 h-5 text-gray-400" />
+                      </button>
+                    </div>
 
-              <div className="p-8 bg-[#F8F9FA] border-t border-[#E9ECEF] space-y-6">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                    <span>Tạm tính</span>
-                    <span>{formatPrice(total)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                    <span>Phí vận chuyển</span>
-                    <span className="text-green-500">Miễn phí</span>
-                  </div>
-                  <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
-                    <span className="font-black text-lg">Tổng cộng</span>
-                    <span className="font-black text-blue-600 text-3xl">{formatPrice(total)}</span>
-                  </div>
+                    <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                      <AnimatePresence mode="popLayout">
+                        {(cart || []).length === 0 ? (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4"
+                          >
+                            <div className="bg-gray-50 p-10 rounded-[2.5rem]">
+                              <ShoppingBag className="w-16 h-16 opacity-10" />
+                            </div>
+                            <div className="text-center">
+                              <p className="text-lg font-bold text-gray-900">Giỏ hàng trống</p>
+                              <p className="text-sm font-medium">Hãy chọn những món đồ bạn yêu thích</p>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          (cart || []).map((item) => (
+                            <motion.div
+                              key={item.id}
+                              layout
+                              initial={{ opacity: 0, x: 20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: -20 }}
+                              className="flex items-center gap-5 p-5 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] relative group"
+                            >
+                              <img
+                                src={item.image}
+                                alt={item.name}
+                                className="w-20 h-20 rounded-2xl object-cover shadow-sm"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-black text-base truncate">{item.name}</h4>
+                                <p className="text-blue-600 font-black text-sm mb-2">{formatPrice(item.price)}</p>
+                                <div className="flex items-center gap-4 bg-white border border-[#E9ECEF] rounded-xl p-1 w-fit shadow-sm">
+                                  <button
+                                    onClick={() => updateQuantity(item.id, -1)}
+                                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className="font-black text-sm min-w-[20px] text-center">{item.quantity}</span>
+                                  <button
+                                    onClick={() => updateQuantity(item.id, 1)}
+                                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeFromCart(item.id)}
+                                className="p-3 text-gray-300 hover:text-red-500 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </motion.div>
+                          ))
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <div className="p-8 bg-[#F8F9FA] border-t border-[#E9ECEF] space-y-6">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
+                          <span>Tạm tính</span>
+                          <span>{formatPrice(total)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
+                          <span>Phí vận chuyển</span>
+                          <span className="text-green-500">Miễn phí</span>
+                        </div>
+                        <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
+                          <span className="font-black text-lg">Tổng cộng</span>
+                          <span className="font-black text-blue-600 text-3xl">{formatPrice(total)}</span>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={handleCheckout}
+                        disabled={cart.length === 0 || loading}
+                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]"
+                      >
+                        {loading ? (
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        ) : (
+                          <ChevronRight className="w-6 h-6" />
+                        )}
+                        {loading ? 'Đang xử lý...' : 'Gửi đơn hàng ngay'}
+                      </button>
+                    </div>
+                  </motion.section>
                 </div>
-                
-                <button
-                  onClick={handleCheckout}
-                  disabled={cart.length === 0 || loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]"
-                >
-                  {loading ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                  ) : (
-                    <ChevronRight className="w-6 h-6" />
-                  )}
-                  {loading ? 'Đang xử lý...' : 'Gửi đơn hàng ngay'}
-                </button>
-                
-                <p className="text-[10px] text-center text-gray-400 font-medium">
-                  Bằng cách nhấn nút, bạn đồng ý với các điều khoản của Marketplace
-                </p>
-              </div>
-            </section>
+              )}
+            </AnimatePresence>
           </motion.main>
         )}
       </AnimatePresence>
