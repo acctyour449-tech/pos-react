@@ -768,7 +768,7 @@ export default function App() {
                   <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
                   <p className="font-medium">Đang tải sản phẩm của bạn...</p>
                 </div>
-              ) : products.length === 0 ? (
+              ) : (products || []).length === 0 ? (
                 <div className="col-span-full h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[2rem] border-2 border-dashed border-[#E9ECEF]">
                   <div className="bg-gray-50 p-8 rounded-full">
                     <Store className="w-16 h-16 opacity-10" />
@@ -785,7 +785,7 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                products.map((product) => (
+                (products || []).map((product) => (
                   <div key={product.id} className="bg-white rounded-3xl border border-[#E9ECEF] overflow-hidden shadow-sm group">
                     <div className="h-48 overflow-hidden relative">
                       {isVideo(product.image) ? (
@@ -909,7 +909,7 @@ export default function App() {
                         )}
                         {editingProduct && !selectedFile && (
                           <p className="text-[10px] font-bold text-gray-400 mt-1">
-                            Đang sử dụng: {editingProduct.image.split('/').pop()?.slice(-20)}
+                            Đang sử dụng: {editingProduct?.image?.split('/').pop()?.slice(-20) || 'Chưa có ảnh'}
                           </p>
                         )}
                       </div>
@@ -1024,10 +1024,10 @@ export default function App() {
                         </td>
                       </tr>
                     ) : (
-                      orders.map((order) => (
+                      (orders || []).map((order) => (
                         <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
                           <td className="px-8 py-6">
-                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order.id.toString().slice(-8)}</span>
+                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8) || 'N/A'}</span>
                           </td>
                           <td className="px-8 py-6">
                             <p className="text-sm font-bold text-gray-900">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
@@ -1106,14 +1106,14 @@ export default function App() {
                     <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
                     <p className="font-bold">Đang tìm kiếm sản phẩm...</p>
                   </div>
-                ) : products.length === 0 ? (
+                ) : (products || []).length === 0 ? (
                   <div className="h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[3rem] border border-[#E9ECEF]">
                     <Search className="w-16 h-16 opacity-10" />
                     <p className="text-xl font-bold text-gray-900">Không tìm thấy sản phẩm nào</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {products.map((product) => (
+                    {(products || []).map((product) => (
                       <motion.div
                         key={product.id}
                         whileHover={{ y: -8 }}
@@ -1147,7 +1147,7 @@ export default function App() {
                               <h3 className="font-black text-2xl mb-1 group-hover:text-blue-600 transition-colors">{product.name}</h3>
                               <div className="flex items-center gap-2 text-gray-400">
                                 <Store className="w-3 h-3" />
-                                <span className="text-xs font-bold uppercase tracking-wider">Seller ID: {product.seller_id.slice(0, 8)}...</span>
+                                <span className="text-xs font-bold uppercase tracking-wider">Seller ID: {product?.seller_id?.slice(0, 8) || 'Unknown'}...</span>
                               </div>
                             </div>
                             <div className="text-right">
@@ -1185,7 +1185,7 @@ export default function App() {
 
               <div className="flex-1 overflow-y-auto p-8 space-y-6">
                 <AnimatePresence mode="popLayout">
-                  {cart.length === 0 ? (
+                  {(cart || []).length === 0 ? (
                     <motion.div
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -1200,7 +1200,7 @@ export default function App() {
                       </div>
                     </motion.div>
                   ) : (
-                    cart.map((item) => (
+                    (cart || []).map((item) => (
                       <motion.div
                         key={item.id}
                         layout
