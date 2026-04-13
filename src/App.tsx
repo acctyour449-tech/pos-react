@@ -81,6 +81,40 @@ export default function App() {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
   };
 
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+
+    try {
+      setLoading(true);
+      
+      // Prepare order data
+      const orderData = {
+        total_price: total,
+        items: cart.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity
+        }))
+      };
+
+      const { error: checkoutError } = await supabase
+        .from('orders')
+        .insert([orderData]);
+
+      if (checkoutError) throw checkoutError;
+
+      // Success
+      alert('Thanh toán thành công! Đơn hàng đã được lưu.');
+      setCart([]);
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      alert('Lỗi thanh toán: ' + (err.message || 'Không thể lưu đơn hàng'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
       {/* Header */}
@@ -246,11 +280,16 @@ export default function App() {
               <span className="font-black text-blue-600 text-2xl">{formatPrice(total)}</span>
             </div>
             <button
-              disabled={cart.length === 0}
+              onClick={handleCheckout}
+              disabled={cart.length === 0 || loading}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
             >
-              <CreditCard className="w-6 h-6" />
-              Thanh toán ngay
+              {loading ? (
+                <Loader2 className="w-6 h-6 animate-spin" />
+              ) : (
+                <CreditCard className="w-6 h-6" />
+              )}
+              {loading ? 'Đang xử lý...' : 'Thanh toán ngay'}
             </button>
           </div>
         </section>
