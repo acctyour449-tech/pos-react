@@ -3,7 +3,7 @@ import {
   ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap, 
   Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign, 
   LogIn, UserPlus, LogOut, Mail, Lock, Store, User, PackagePlus, 
-  ShoppingBag, Search, Filter, ChevronRight, Star, Tag
+  ShoppingBag, Search, Filter, ChevronRight, Star, Tag, Edit
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
@@ -224,6 +224,76 @@ function AuthForm() {
   );
 }
 
+function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => void }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleSelect = async (selectedRole: 'seller' | 'buyer') => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { role: selectedRole }
+      });
+      if (error) throw error;
+      onSelect(selectedRole);
+    } catch (err: any) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] p-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl border border-[#E9ECEF] p-12 text-center"
+      >
+        <div className="bg-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-blue-600/20">
+          <User className="text-white w-10 h-10" />
+        </div>
+        <h1 className="text-4xl font-black tracking-tight mb-4">Chào mừng bạn!</h1>
+        <p className="text-gray-500 text-lg font-medium mb-12">Hãy chọn vai trò của bạn để bắt đầu trải nghiệm Marketplace</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <button
+            disabled={loading}
+            onClick={() => handleSelect('buyer')}
+            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]"
+          >
+            <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <ShoppingBag className="w-8 h-8" />
+            </div>
+            <h3 className="text-2xl font-black mb-2">Tôi là Người mua</h3>
+            <p className="text-gray-500 font-medium">Khám phá hàng ngàn sản phẩm từ các người bán uy tín.</p>
+            <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
+          </button>
+
+          <button
+            disabled={loading}
+            onClick={() => handleSelect('seller')}
+            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]"
+          >
+            <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <Store className="w-8 h-8" />
+            </div>
+            <h3 className="text-2xl font-black mb-2">Tôi là Người bán</h3>
+            <p className="text-gray-500 font-medium">Bắt đầu kinh doanh và tiếp cận hàng triệu khách hàng.</p>
+            <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
+          </button>
+        </div>
+        
+        {loading && (
+          <div className="mt-8 flex items-center justify-center gap-2 text-blue-600 font-bold">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Đang thiết lập tài khoản...
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -237,12 +307,13 @@ export default function App() {
 
   // Seller specific state
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const role = useMemo(() => {
     if (!session?.user) return null;
-    return (session.user.user_metadata?.role as 'seller' | 'buyer') || 'buyer';
+    return session.user.user_metadata?.role as 'seller' | 'buyer' | undefined;
   }, [session]);
 
   useEffect(() => {
@@ -317,7 +388,8 @@ export default function App() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user.id || !selectedFile) {
+    if (!session?.user.id) return;
+    if (!editingProduct && !selectedFile) {
       alert('Vui lòng chọn ảnh hoặc video sản phẩm');
       return;
     }
@@ -325,34 +397,56 @@ export default function App() {
     try {
       setLoading(true);
       
-      // 1. Upload file to Supabase Storage
-      const fileName = `${Date.now()}_${selectedFile.name}`;
-      const filePath = `${session.user.id}/${fileName}`;
+      let imageUrl = editingProduct?.image || '';
 
-      const { error: uploadError } = await supabase.storage
-        .from('assets')
-        .upload(filePath, selectedFile);
+      // 1. Upload file if selected
+      if (selectedFile) {
+        const fileName = `${Date.now()}_${selectedFile.name}`;
+        const filePath = `${session.user.id}/${fileName}`;
 
-      if (uploadError) throw uploadError;
+        const { error: uploadError } = await supabase.storage
+          .from('assets')
+          .upload(filePath, selectedFile);
 
-      // 2. Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('assets')
-        .getPublicUrl(filePath);
+        if (uploadError) throw uploadError;
 
-      // 3. Insert product into database
-      const { error } = await supabase.from('products').insert([{
-        name: newProduct.name,
-        price: Number(newProduct.price),
-        category: newProduct.category,
-        image: publicUrl,
-        seller_id: session.user.id
-      }]);
+        const { data: { publicUrl } } = supabase.storage
+          .from('assets')
+          .getPublicUrl(filePath);
+        
+        imageUrl = publicUrl;
+      }
 
-      if (error) throw error;
+      // 2. Insert or Update product
+      if (editingProduct) {
+        const { error } = await supabase
+          .from('products')
+          .update({
+            name: newProduct.name,
+            price: Number(newProduct.price),
+            category: newProduct.category,
+            image: imageUrl
+          })
+          .eq('id', editingProduct.id)
+          .eq('seller_id', session.user.id); // Security check
+
+        if (error) throw error;
+        alert('Cập nhật sản phẩm thành công!');
+      } else {
+        const { error } = await supabase.from('products').insert([{
+          name: newProduct.name,
+          price: Number(newProduct.price),
+          category: newProduct.category,
+          image: imageUrl,
+          seller_id: session.user.id
+        }]);
+
+        if (error) throw error;
+        alert('Thêm sản phẩm thành công!');
+      }
       
-      alert('Thêm sản phẩm thành công!');
       setShowAddProduct(false);
+      setEditingProduct(null);
       setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
       setSelectedFile(null);
       fetchProducts();
@@ -361,6 +455,37 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteProduct = async (id: number) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return;
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id)
+        .eq('seller_id', session?.user.id); // Security check
+
+      if (error) throw error;
+      alert('Đã xóa sản phẩm');
+      fetchProducts();
+    } catch (err: any) {
+      alert('Lỗi xóa sản phẩm: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setNewProduct({
+      name: product.name,
+      price: product.price.toString(),
+      category: product.category
+    });
+    setShowAddProduct(true);
   };
 
   const addToCart = (product: Product) => {
@@ -462,6 +587,15 @@ export default function App() {
 
   if (!session) {
     return <AuthForm />;
+  }
+
+  if (!role) {
+    return <RoleSelection onSelect={(selectedRole) => {
+      // Refresh session to get updated metadata
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+      });
+    }} />;
   }
 
   return (
@@ -607,7 +741,25 @@ export default function App() {
                     </div>
                     <div className="p-5">
                       <h3 className="font-bold text-lg mb-1 truncate">{product.name}</h3>
-                      <p className="text-blue-600 font-black text-xl">{formatPrice(product.price)}</p>
+                      <div className="flex justify-between items-center">
+                        <p className="text-blue-600 font-black text-xl">{formatPrice(product.price)}</p>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => openEditModal(product)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                            title="Chỉnh sửa"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Xóa"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -631,7 +783,7 @@ export default function App() {
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
                     className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl p-10"
                   >
-                    <h3 className="text-2xl font-black mb-6">Thêm sản phẩm mới</h3>
+                    <h3 className="text-2xl font-black mb-6">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
                     <form onSubmit={handleAddProduct} className="space-y-5">
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Tên sản phẩm</label>
@@ -671,11 +823,13 @@ export default function App() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Ảnh hoặc Video sản phẩm</label>
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">
+                          {editingProduct ? 'Thay đổi ảnh/video (Để trống nếu giữ cũ)' : 'Ảnh hoặc Video sản phẩm'}
+                        </label>
                         <div className="relative">
                           <input
                             type="file"
-                            required
+                            required={!editingProduct}
                             accept="image/*,video/*"
                             onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                             className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
@@ -686,11 +840,21 @@ export default function App() {
                             Đã chọn: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                           </p>
                         )}
+                        {editingProduct && !selectedFile && (
+                          <p className="text-[10px] font-bold text-gray-400 mt-1">
+                            Đang sử dụng: {editingProduct.image.split('/').pop()?.slice(-20)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-4 pt-4">
                         <button
                           type="button"
-                          onClick={() => setShowAddProduct(false)}
+                          onClick={() => {
+                            setShowAddProduct(false);
+                            setEditingProduct(null);
+                            setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
+                            setSelectedFile(null);
+                          }}
                           className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-4 rounded-2xl transition-all"
                         >
                           Hủy
@@ -701,7 +865,7 @@ export default function App() {
                           className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                           {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-                          Lưu sản phẩm
+                          {editingProduct ? 'Cập nhật' : 'Lưu sản phẩm'}
                         </button>
                       </div>
                     </form>
