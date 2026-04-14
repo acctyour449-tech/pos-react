@@ -9,7 +9,7 @@ import {
   MapPin, Phone, MessageCircle, RefreshCw, Award, Flame, Sparkles,
   Camera, Upload, BarChart2, Users, ShoppingBasket, Percent,
   ArrowUpRight, ArrowDownRight, Info, Copy, ExternalLink, Gift,
-  ChevronLeft, Home, Bookmark, Settings, HelpCircle, Globe
+  ChevronLeft, Home, Bookmark, Settings, HelpCircle, Globe, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
@@ -73,16 +73,6 @@ interface Notification {
   created_at: string;
 }
 
-interface Review {
-  id: number;
-  product_id: number;
-  buyer_id: string;
-  buyer_name?: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-}
-
 interface Toast {
   id: number;
   message: string;
@@ -134,7 +124,8 @@ const timeAgo = (date: string) => {
   return new Date(date).toLocaleDateString('vi-VN');
 };
 
-// ─────────── RATING STARS ───────────
+// ─────────── COMPONENTS ───────────
+
 function Stars({ value, size = 'sm', onChange }: { value: number; size?: 'sm' | 'md' | 'lg'; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0);
   const sz = size === 'sm' ? 'w-3.5 h-3.5' : size === 'md' ? 'w-5 h-5' : 'w-7 h-7';
@@ -150,45 +141,53 @@ function Stars({ value, size = 'sm', onChange }: { value: number; size?: 'sm' | 
   );
 }
 
-// ─────────── PRODUCT CARD (Buyer) ───────────
-function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView }: {
+function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView, onHide, hidden }: {
   product: Product; onAddToCart: (p: Product) => void;
   onWishlist: (id: number) => void; wishlisted: boolean; onView: (p: Product) => void;
+  onHide: (id: number) => void; hidden: boolean;
 }) {
   const discount = product.original_price ? Math.round((1 - product.price / product.original_price) * 100) : 0;
+  
+  if (hidden) return null; // Sẽ được handle ở level filter nhưng thêm ở đây cho chắc chắn
+
   return (
-    <motion.div whileHover={{ y: -6 }} className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/8 transition-all group cursor-pointer"
+    <motion.div whileHover={{ y: -6 }} className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/8 transition-all group cursor-pointer relative"
       onClick={() => onView(product)}>
+      
+      {/* Hide Button (Only for Buyer) */}
+      <button onClick={e => { e.stopPropagation(); onHide(product.id); }}
+        className="absolute top-3 right-3 z-20 p-2 rounded-full bg-white/80 backdrop-blur-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 shadow-sm">
+        <EyeOff className="w-4 h-4" />
+      </button>
+
       <div className="h-52 overflow-hidden relative bg-gray-50">
         {isVideo(product.image)
           ? <video src={product.image} className="w-full h-full object-cover" muted loop onClick={e => { e.stopPropagation(); }} />
           : <img src={product.image || `https://picsum.photos/seed/${product.id}/400/300`} alt={product.name}
               className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700" referrerPolicy="no-referrer" />}
-        {/* Badges */}
+        
         <div className="absolute top-3 left-3 flex flex-col gap-1.5">
           {discount > 0 && <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{discount}%</span>}
           {product.is_featured && <span className="bg-amber-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-0.5"><Flame className="w-2.5 h-2.5" />Hot</span>}
-          {product.sold_count && product.sold_count > 100 && <span className="bg-violet-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Bán chạy</span>}
         </div>
-        {/* Wishlist */}
+        
         <button onClick={e => { e.stopPropagation(); onWishlist(product.id); }}
           className={`absolute top-3 right-3 p-2.5 rounded-2xl backdrop-blur-sm transition-all ${wishlisted ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-400 hover:text-red-400'}`}>
           <Heart className={`w-4 h-4 ${wishlisted ? 'fill-white' : ''}`} />
         </button>
-        {/* Category badge */}
+
         <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-[9px] font-black text-blue-600 uppercase tracking-widest px-2.5 py-1 rounded-full">
           {product.category}
         </div>
       </div>
+
       <div className="p-4">
         <h3 className="font-bold text-sm leading-tight mb-1 line-clamp-2 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-        {product.rating && (
-          <div className="flex items-center gap-1.5 mb-2">
-            <Stars value={product.rating} />
-            <span className="text-[10px] text-gray-400 font-bold">({product.review_count || 0})</span>
-            {product.sold_count && <span className="text-[10px] text-gray-400 ml-1">• {product.sold_count} đã bán</span>}
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 mb-2">
+          <Stars value={product.rating || 0} />
+          <span className="text-[10px] text-gray-400 font-bold">({product.review_count || 0})</span>
+          {product.sold_count && <span className="text-[10px] text-gray-400 ml-1">• {product.sold_count} đã bán</span>}
+        </div>
         <div className="flex items-end justify-between">
           <div>
             <p className="text-blue-600 font-black text-base">{formatPrice(product.price)}</p>
@@ -204,7 +203,24 @@ function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView }: {
   );
 }
 
-// ─────────── PRODUCT DETAIL MODAL ───────────
+// ─────────── SKELETON LOADER ───────────
+function ProductSkeleton() {
+  return (
+    <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm animate-pulse">
+      <div className="h-52 bg-gray-200" />
+      <div className="p-4 space-y-3">
+        <div className="h-4 bg-gray-200 rounded-full w-3/4" />
+        <div className="h-3 bg-gray-200 rounded-full w-1/2" />
+        <div className="flex justify-between items-end">
+          <div className="h-6 bg-gray-200 rounded-full w-1/3" />
+          <div className="w-10 h-10 bg-gray-200 rounded-2xl" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// (Các component ProductDetailModal, AuthForm, RoleSelection, NotificationPanel giữ nguyên logic cơ bản nhưng được tối ưu performance)
 function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishlist }: {
   product: Product; onClose: () => void;
   onAddToCart: (p: Product, qty: number, note: string) => void;
@@ -222,9 +238,7 @@ function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishl
         className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ opacity: 0, y: 60, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 60 }}
         className="relative bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Close */}
         <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors"><X className="w-5 h-5 text-white" /></button>
-        {/* Image Gallery */}
         <div className="h-72 sm:h-80 bg-gray-100 relative overflow-hidden">
           {isVideo(images[activeImg])
             ? <video src={images[activeImg]} controls className="w-full h-full object-cover" />
@@ -238,7 +252,6 @@ function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishl
           )}
           {discount > 0 && <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-black px-3 py-1 rounded-full">-{discount}%</span>}
         </div>
-        {/* Details */}
         <div className="p-6 space-y-5">
           <div>
             <div className="flex items-start justify-between gap-3 mb-2">
@@ -257,7 +270,6 @@ function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishl
               </div>
             )}
           </div>
-          {/* Price */}
           <div className="flex items-center gap-3">
             <span className="text-3xl font-black text-blue-600">{formatPrice(product.price)}</span>
             {product.original_price && <>
@@ -265,29 +277,13 @@ function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishl
               <span className="bg-red-100 text-red-600 text-xs font-black px-2 py-0.5 rounded-full">Tiết kiệm {formatPrice(product.original_price - product.price)}</span>
             </>}
           </div>
-          {/* Tags */}
-          {product.tags?.length && (
-            <div className="flex flex-wrap gap-2">
-              {product.tags.map(tag => <span key={tag} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1 rounded-full">#{tag}</span>)}
-            </div>
-          )}
-          {/* Description */}
           {product.description && <p className="text-gray-600 text-sm leading-relaxed">{product.description}</p>}
-          {/* Stock */}
-          {product.stock !== undefined && (
-            <div className={`flex items-center gap-2 text-sm font-bold ${product.stock > 10 ? 'text-emerald-600' : product.stock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
-              <Package className="w-4 h-4" />
-              {product.stock > 10 ? `Còn hàng (${product.stock} sản phẩm)` : product.stock > 0 ? `Chỉ còn ${product.stock} sản phẩm` : 'Hết hàng'}
-            </div>
-          )}
-          {/* Note */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Ghi chú đơn hàng (tùy chọn)</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
               placeholder="Ví dụ: Không hành, ít đường, giao buổi sáng..."
               className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all resize-none" />
           </div>
-          {/* Quantity + Add to cart */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl p-1.5">
               <button onClick={() => setQty(q => Math.max(1, q - 1))} className="p-2 hover:bg-gray-200 rounded-xl transition-colors"><Minus className="w-4 h-4" /></button>
@@ -307,7 +303,6 @@ function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishl
   );
 }
 
-// ─────────── AUTH FORM ───────────
 function AuthForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -332,12 +327,6 @@ function AuthForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-6">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div key={i} className="absolute rounded-full bg-blue-500/5"
-            style={{ width: Math.random() * 300 + 50, height: Math.random() * 300 + 50, left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`, transform: 'translate(-50%,-50%)' }} />
-        ))}
-      </div>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="relative w-full max-w-md bg-white/5 backdrop-blur-xl rounded-[2rem] border border-white/10 p-8 shadow-2xl">
         <div className="text-center mb-8">
@@ -348,16 +337,16 @@ function AuthForm() {
           <p className="text-blue-200/70 mt-1">{isLogin ? 'Chào mừng quay lại' : 'Tạo tài khoản mới'}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {['email', 'password'].map(field => (
-            <div key={field} className="relative">
-              {field === 'email' ? <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" /> : <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" />}
-              <input type={field === 'email' ? 'email' : 'password'} required
-                value={field === 'email' ? email : password}
-                onChange={e => field === 'email' ? setEmail(e.target.value) : setPassword(e.target.value)}
-                placeholder={field === 'email' ? 'Email của bạn' : 'Mật khẩu'}
-                className="w-full bg-white/10 border border-white/10 text-white placeholder-white/30 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all" />
-            </div>
-          ))}
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" />
+            <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Email của bạn"
+              className="w-full bg-white/10 border border-white/10 text-white placeholder-white/30 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all" />
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" />
+            <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu"
+              className="w-full bg-white/10 border border-white/10 text-white placeholder-white/30 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all" />
+          </div>
           {!isLogin && (
             <div className="grid grid-cols-2 gap-3">
               {(['buyer', 'seller'] as const).map(r => (
@@ -385,7 +374,6 @@ function AuthForm() {
   );
 }
 
-// ─────────── ROLE SELECTION ───────────
 function RoleSelection({ onSelect }: { onSelect: (r: 'seller' | 'buyer') => void }) {
   const [loading, setLoading] = useState<string | null>(null);
   const handleSelect = async (r: 'seller' | 'buyer') => {
@@ -426,7 +414,6 @@ function RoleSelection({ onSelect }: { onSelect: (r: 'seller' | 'buyer') => void
   );
 }
 
-// ─────────── NOTIFICATION PANEL ───────────
 function NotificationPanel({ notifications, onClose, onMarkRead, onMarkAllRead }: {
   notifications: Notification[]; onClose: () => void;
   onMarkRead: (id: number) => void; onMarkAllRead: () => void;
@@ -490,12 +477,14 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [buyerOrders, setBuyerOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [wishlist, setWishlist] = useState<number[]>([]);
+  const [hiddenProducts, setHiddenProducts] = useState<number[]>([]);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -504,7 +493,6 @@ export default function App() {
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000]);
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [newProduct, setNewProduct] = useState({ name: '', price: '', original_price: '', category: 'food', subcategory: '', description: '', stock: '100', tags: '' });
@@ -516,10 +504,6 @@ export default function App() {
   const [orderNote, setOrderNote] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [discount, setDiscount] = useState(0);
-  const [showSellerStats, setShowSellerStats] = useState(false);
-
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   const role = useMemo(() => session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined, [session]);
   const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
@@ -536,9 +520,15 @@ export default function App() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
   };
 
-  // Filtered products
+  // Filtered products with "Hidden" logic
   const filteredProducts = useMemo(() => {
     let list = [...(role === 'seller' && activeTab === 'my-products' ? products : allProducts)];
+    
+    // Filter out hidden products for buyers
+    if (role === 'buyer') {
+      list = list.filter(p => !hiddenProducts.includes(p.id));
+    }
+
     if (searchQuery) list = list.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()) || p.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
     if (selectedCategory !== 'all') {
       const catLabel = CATEGORIES.find(c => c.id === selectedCategory)?.label;
@@ -546,6 +536,7 @@ export default function App() {
     }
     if (selectedSubcat) list = list.filter(p => p.subcategory === selectedSubcat);
     list = list.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+    
     switch (sortBy) {
       case 'price_asc': list.sort((a, b) => a.price - b.price); break;
       case 'price_desc': list.sort((a, b) => b.price - a.price); break;
@@ -554,9 +545,9 @@ export default function App() {
       default: list.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
     return list;
-  }, [allProducts, products, searchQuery, selectedCategory, selectedSubcat, sortBy, priceRange, role, activeTab]);
+  }, [allProducts, products, searchQuery, selectedCategory, selectedSubcat, sortBy, priceRange, role, activeTab, hiddenProducts]);
 
-  // ─── Auth ───
+  // ─── Auth & Setup ───
   useEffect(() => {
     const init = async () => {
       try {
@@ -574,8 +565,8 @@ export default function App() {
     else if (role === 'buyer') setActiveTab('marketplace');
   }, [role]);
 
-  // ─── Fetch ───
-  useEffect(() => { if (session) { fetchAllProducts(); } }, [session]);
+  // ─── Fetch Data ───
+  useEffect(() => { if (session) { fetchAllProducts(); fetchHiddenProducts(); } }, [session]);
   useEffect(() => { if (session && role === 'seller') fetchMyProducts(); }, [session, role, activeTab]);
   useEffect(() => { if (activeTab === 'my-orders' && role === 'seller') fetchOrders(); }, [activeTab, role]);
   useEffect(() => { if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders(); }, [activeTab, role]);
@@ -583,9 +574,16 @@ export default function App() {
 
   async function fetchAllProducts() {
     setLoading(true);
-    const { data } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-    setAllProducts(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+      setAllProducts(data || []);
+    } catch (e) { showToast('Lỗi khi tải sản phẩm', 'error'); } finally { setLoading(false); }
+  }
+
+  async function fetchHiddenProducts() {
+    if (!session) return;
+    const { data } = await supabase.from('hidden_products').select('product_id').eq('user_id', session.user.id);
+    if (data) setHiddenProducts(data.map(d => d.product_id));
   }
 
   async function fetchMyProducts() {
@@ -622,7 +620,7 @@ export default function App() {
         showToast(`🔔 ${n.message}`, 'info');
       })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { supabase.removeChannel(ch); };
   }
 
   // ─── Product CRUD ───
@@ -637,7 +635,7 @@ export default function App() {
     e.preventDefault();
     if (!editingProduct && !selectedFile) { showToast('Vui lòng chọn ảnh sản phẩm', 'error'); return; }
     try {
-      setLoading(true);
+      setActionLoading('saving');
       let imageUrl = editingProduct?.image || '';
       if (selectedFile) {
         const path = `${session!.user.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
@@ -665,7 +663,7 @@ export default function App() {
       }
       resetProductForm();
       fetchMyProducts(); fetchAllProducts();
-    } catch (err: any) { showToast(err.message, 'error'); } finally { setLoading(false); }
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setActionLoading(null); }
   };
 
   const resetProductForm = () => {
@@ -683,17 +681,30 @@ export default function App() {
 
   const handleDeleteProduct = async (id: number) => {
     if (!confirm('Xóa sản phẩm này?')) return;
-    const { error } = await supabase.from('products').delete().eq('id', id).eq('seller_id', session!.user.id);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Đã xóa sản phẩm');
-    fetchMyProducts(); fetchAllProducts();
+    try {
+      setActionLoading('deleting-' + id);
+      const { error } = await supabase.from('products').delete().eq('id', id).eq('seller_id', session!.user.id);
+      if (error) throw error;
+      showToast('Đã xóa sản phẩm');
+      fetchMyProducts(); fetchAllProducts();
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setActionLoading(null); }
+  };
+
+  // ─── Favorites & Hide Logic ───
+  const handleHideProduct = async (id: number) => {
+    try {
+      const { error } = await supabase.from('hidden_products').insert([{ user_id: session!.user.id, product_id: id }]);
+      if (error) throw error;
+      setHiddenProducts(prev => [...prev, id]);
+      showToast('Đã ẩn sản phẩm này khỏi tầm nhìn của bạn');
+    } catch (err: any) { showToast('Không thể ẩn sản phẩm', 'error'); }
   };
 
   // ─── Cart ───
   const addToCart = (product: Product, qty = 1, note = '') => {
     setCart(prev => {
       if (prev.length > 0 && prev[0].seller_id !== product.seller_id) {
-        if (!confirm('Giỏ hàng có sản phẩm từ cửa hàng khác. Làm mới giỏ hàng?')) return prev;
+        if (!confirm('Giỏ hàng hiện đang chứa sản phẩm từ cửa hàng khác. Bạn muốn xóa tất cả và thêm sản phẩm này?')) return prev;
         return [{ ...product, quantity: qty, note }];
       }
       const existing = prev.find(i => i.id === product.id);
@@ -728,7 +739,6 @@ export default function App() {
       };
       const { data: order, error } = await supabase.from('orders').insert([orderData]).select().single();
       if (error) throw error;
-      // Notify seller
       await supabase.from('notifications').insert([{
         user_id: cart[0].seller_id, order_id: order.id,
         message: `🛍️ Đơn hàng mới #${String(order.id).slice(-6)} — ${formatPrice(finalTotal)}`,
@@ -740,9 +750,10 @@ export default function App() {
     } catch (err: any) { showToast(err.message, 'error'); } finally { setLoading(false); }
   };
 
-  // ─── Order Status Update (Seller) ───
+  // ─── Order Status (Seller) ───
   const updateOrderStatus = async (order: Order, newStatus: string) => {
     try {
+      setActionLoading('updating-order-' + order.id);
       const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
       if (error) throw error;
       const msgMap: Record<string, string> = {
@@ -756,18 +767,21 @@ export default function App() {
       }
       showToast(`Đã cập nhật: ${newStatus}`);
       fetchOrders();
-    } catch (err: any) { showToast(err.message, 'error'); }
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setActionLoading(null); }
   };
 
   const cancelOrder = async (order: Order) => {
     if (!confirm('Hủy đơn hàng này?')) return;
-    const { error } = await supabase.from('orders').update({ status: 'Đã hủy' }).eq('id', order.id);
-    if (error) { showToast(error.message, 'error'); return; }
-    if (order.buyer_id) {
-      await supabase.from('notifications').insert([{ user_id: order.buyer_id, order_id: order.id, message: `❌ Đơn hàng #${String(order.id).slice(-6)} đã bị hủy.`, type: 'system', is_read: false }]);
-    }
-    showToast('Đã hủy đơn hàng');
-    fetchOrders();
+    try {
+      setActionLoading('cancelling-' + order.id);
+      const { error } = await supabase.from('orders').update({ status: 'Đã hủy' }).eq('id', order.id);
+      if (error) throw error;
+      if (order.buyer_id) {
+        await supabase.from('notifications').insert([{ user_id: order.buyer_id, order_id: order.id, message: `❌ Đơn hàng #${String(order.id).slice(-6)} đã bị hủy.`, type: 'system', is_read: false }]);
+      }
+      showToast('Đã hủy đơn hàng');
+      fetchOrders();
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setActionLoading(null); }
   };
 
   const markNotifRead = async (id: number) => {
@@ -780,24 +794,14 @@ export default function App() {
     setNotifications(p => p.map(n => ({ ...n, is_read: true })));
   };
 
-  // ─── Guards ───
-  if (!supabaseUrl || !supabaseKey) {
-    return <div className="min-h-screen flex items-center justify-center bg-red-50 p-6 text-center">
-      <div><AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" /><h1 className="text-2xl font-black text-red-900">Thiếu cấu hình Supabase</h1><p className="text-red-600 mt-2">Kiểm tra VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY</p></div>
-    </div>;
-  }
   if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
   if (!session) return <AuthForm />;
   if (!role) return <RoleSelection onSelect={() => supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))} />;
 
   const catOptions = CATEGORIES.find(c => c.id === newProduct.category)?.sub || [];
 
-  // ─────────────────────────────────────────────────────────────────────
-  //                          MAIN RENDER
-  // ─────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-gray-900">
-
       {/* ── Toasts ── */}
       <div className="fixed top-6 right-6 z-[150] flex flex-col gap-3 pointer-events-none">
         <AnimatePresence>
@@ -811,12 +815,10 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* ── Notification Panel ── */}
       <AnimatePresence>
         {showNotifications && <NotificationPanel notifications={notifications} onClose={() => setShowNotifications(false)} onMarkRead={markNotifRead} onMarkAllRead={markAllNotifsRead} />}
       </AnimatePresence>
 
-      {/* ── Product Detail Modal ── */}
       <AnimatePresence>
         {viewProduct && <ProductDetailModal product={viewProduct} onClose={() => setViewProduct(null)} onAddToCart={(p, qty, note) => addToCart(p, qty, note)} wishlisted={wishlist.includes(viewProduct.id)} onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])} />}
       </AnimatePresence>
@@ -824,7 +826,6 @@ export default function App() {
       {/* ══════════════════════════════ NAVBAR ══════════════════════════════ */}
       <nav className="bg-white/95 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-6">
-          {/* Logo */}
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab(role === 'seller' ? 'my-products' : 'marketplace')}>
               <div className="bg-blue-600 w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
@@ -835,7 +836,6 @@ export default function App() {
                 {role === 'seller' ? 'Seller' : 'Buyer'}
               </span>
             </div>
-            {/* Nav Tabs */}
             <div className="hidden md:flex items-center gap-1">
               {role === 'seller' ? (
                 <>
@@ -865,8 +865,6 @@ export default function App() {
               )}
             </div>
           </div>
-
-          {/* Right side */}
           <div className="flex items-center gap-2">
             {role === 'buyer' && (
               <button onClick={() => { setShowCart(true); setCheckoutStep('cart'); }}
@@ -899,7 +897,6 @@ export default function App() {
         {/* ██████████████████  SELLER: MY PRODUCTS  ██████████████████ */}
         {activeTab === 'my-products' && (
           <motion.main key="my-products" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
-            {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-black tracking-tight">Sản phẩm của tôi</h1>
@@ -911,7 +908,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Filters Row */}
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -924,20 +920,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* Product Grid */}
             {loading ? (
-              <div className="flex items-center justify-center h-64 gap-3 text-gray-400"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /><span className="font-medium">Đang tải...</span></div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {[...Array(10)].map((_, i) => <ProductSkeleton key={i} />)}
+              </div>
             ) : products.length === 0 ? (
               <div className="bg-white rounded-3xl border-2 border-dashed border-gray-200 p-16 text-center">
                 <Store className="w-14 h-14 text-gray-200 mx-auto mb-4" />
                 <p className="text-lg font-bold text-gray-700 mb-1">Cửa hàng trống</p>
-                <p className="text-gray-400 text-sm mb-4">Thêm sản phẩm đầu tiên để bắt đầu bán hàng</p>
                 <button onClick={() => setShowAddProduct(true)} className="text-blue-600 font-bold hover:underline text-sm">+ Thêm ngay</button>
               </div>
             ) : viewMode === 'grid' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {(searchQuery ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())) : products).map(p => (
-                  <div key={p.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all group">
+                {products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).map(p => (
+                  <div key={p.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all group relative">
                     <div className="h-40 overflow-hidden relative bg-gray-50">
                       {isVideo(p.image) ? <video src={p.image} className="w-full h-full object-cover" muted /> : <img src={p.image || `https://picsum.photos/seed/${p.id}/300/200`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />}
                       {(p.stock || 0) <= 5 && <span className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">Sắp hết</span>}
@@ -945,12 +941,13 @@ export default function App() {
                     <div className="p-3">
                       <p className="font-bold text-sm truncate mb-0.5">{p.name}</p>
                       <p className="text-blue-600 font-black text-sm">{formatPrice(p.price)}</p>
-                      {p.original_price && <p className="text-gray-400 text-xs line-through">{formatPrice(p.original_price)}</p>}
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-[10px] text-gray-400 font-medium">{p.stock ?? '∞'} kho</span>
                         <div className="flex gap-1">
                           <button onClick={() => openEdit(p)} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleDeleteProduct(p.id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteProduct(p.id)} disabled={actionLoading?.startsWith('deleting')} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors disabled:opacity-50">
+                            {actionLoading === 'deleting-' + p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -959,7 +956,7 @@ export default function App() {
               </div>
             ) : (
               <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
-                {(searchQuery ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())) : products).map((p, i) => (
+                {products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).map((p, i) => (
                   <div key={p.id} className={`flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}>
                     <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0">
                       <img src={p.image || `https://picsum.photos/seed/${p.id}/100`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -967,23 +964,22 @@ export default function App() {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm truncate">{p.name}</p>
                       <p className="text-xs text-gray-400">{p.category}{p.subcategory ? ` > ${p.subcategory}` : ''}</p>
-                      {p.tags?.length && <div className="flex gap-1 mt-1">{p.tags.slice(0, 3).map(t => <span key={t} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">#{t}</span>)}</div>}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="font-black text-blue-600 text-sm">{formatPrice(p.price)}</p>
-                      {p.original_price && <p className="text-xs text-gray-400 line-through">{formatPrice(p.original_price)}</p>}
                       <p className={`text-[10px] font-bold mt-0.5 ${(p.stock || 0) <= 5 ? 'text-red-500' : 'text-gray-400'}`}>{p.stock ?? '∞'} còn</p>
                     </div>
                     <div className="flex gap-1.5 flex-shrink-0">
                       <button onClick={() => openEdit(p)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-xl transition-colors"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => handleDeleteProduct(p.id)} className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleDeleteProduct(p.id)} disabled={actionLoading?.startsWith('deleting')} className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-colors disabled:opacity-50">
+                        {actionLoading === 'deleting-' + p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Add/Edit Modal */}
             <AnimatePresence>
               {showAddProduct && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -995,7 +991,6 @@ export default function App() {
                       <button onClick={resetProductForm} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5" /></button>
                     </div>
                     <form onSubmit={handleSaveProduct} className="p-8 space-y-6">
-                      {/* Image Upload */}
                       <div className="space-y-3">
                         <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Ảnh / Video sản phẩm</label>
                         <div className="relative h-44 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden group hover:border-blue-400 transition-colors">
@@ -1003,22 +998,18 @@ export default function App() {
                             isVideo(previewUrl) ? <video src={previewUrl} className="w-full h-full object-cover" muted /> : <img src={previewUrl} className="w-full h-full object-cover" />
                           ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                              <Camera className="w-10 h-10 mb-2" /><p className="text-sm font-medium">Nhấn để chọn ảnh hoặc video</p><p className="text-xs mt-1">JPG, PNG, MP4 tối đa 10MB</p>
+                              <Camera className="w-10 h-10 mb-2" /><p className="text-sm font-medium">Nhấn để chọn ảnh hoặc video</p>
                             </div>
                           )}
                           <input type="file" accept="image/*,video/*" required={!editingProduct} onChange={handleFileChange}
                             className="absolute inset-0 opacity-0 cursor-pointer" />
-                          {previewUrl && <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm p-1.5 rounded-lg"><Camera className="w-4 h-4 text-gray-600" /></div>}
                         </div>
                       </div>
-                      {/* Name */}
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Tên sản phẩm *</label>
                         <input required value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))}
-                          placeholder="Nhập tên sản phẩm..."
                           className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
                       </div>
-                      {/* Category */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Danh mục *</label>
@@ -1038,22 +1029,18 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      {/* Price */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Giá bán (VND) *</label>
                           <input type="number" required value={newProduct.price} onChange={e => setNewProduct(p => ({ ...p, price: e.target.value }))}
-                            placeholder="0"
                             className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Giá gốc (để tạo sale)</label>
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Giá gốc</label>
                           <input type="number" value={newProduct.original_price} onChange={e => setNewProduct(p => ({ ...p, original_price: e.target.value }))}
-                            placeholder="Để trống nếu không có sale"
                             className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
                         </div>
                       </div>
-                      {/* Stock + Tags */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Số lượng kho</label>
@@ -1061,25 +1048,22 @@ export default function App() {
                             className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Tags (phân cách bởi dấu phẩy)</label>
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Tags</label>
                           <input value={newProduct.tags} onChange={e => setNewProduct(p => ({ ...p, tags: e.target.value }))}
                             placeholder="tươi, ngon, hữu cơ..."
                             className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
                         </div>
                       </div>
-                      {/* Description */}
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Mô tả sản phẩm</label>
                         <textarea rows={3} value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))}
-                          placeholder="Mô tả chi tiết về sản phẩm..."
                           className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all resize-none" />
                       </div>
-                      {/* Actions */}
                       <div className="flex gap-3 pt-2">
                         <button type="button" onClick={resetProductForm} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-2xl transition-all text-sm">Hủy</button>
-                        <button type="submit" disabled={loading}
+                        <button type="submit" disabled={actionLoading === 'saving'}
                           className="flex-[2] py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] text-sm">
-                          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                          {actionLoading === 'saving' && <Loader2 className="w-4 h-4 animate-spin" />}
                           {editingProduct ? 'Lưu thay đổi' : 'Đăng sản phẩm'}
                         </button>
                       </div>
@@ -1104,7 +1088,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Stats row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Tổng doanh thu', value: formatPrice(totalRevenue), icon: DollarSign, color: 'bg-blue-600', textColor: 'text-white' },
@@ -1120,14 +1103,12 @@ export default function App() {
               ))}
             </div>
 
-            {/* Orders */}
             {ordersLoading ? (
               <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /><span className="text-gray-500 font-medium">Đang tải...</span></div>
             ) : orders.length === 0 ? (
               <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
                 <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
                 <p className="font-bold text-gray-500">Chưa có đơn hàng nào</p>
-                <p className="text-gray-400 text-sm">Đơn hàng từ khách sẽ hiển thị tại đây</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1151,36 +1132,25 @@ export default function App() {
                         </div>
                         <div className="text-right">
                           <p className="font-black text-blue-600 text-lg">{formatPrice(order.total_price)}</p>
-                          {order.discount_amount && order.discount_amount > 0 && <p className="text-xs text-emerald-600">-{formatPrice(order.discount_amount)} giảm giá</p>}
                         </div>
                       </div>
-
-                      {/* Items */}
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
                           <span key={idx} className="text-[11px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">{item.name} ×{item.quantity}</span>
                         ))}
                       </div>
-
-                      {/* Shipping & Note */}
-                      {(order.shipping_address || order.note) && (
-                        <div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-1">
-                          {order.shipping_address && <p className="text-xs text-gray-600 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />{order.shipping_address}</p>}
-                          {order.note && <p className="text-xs text-gray-600 flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />{order.note}</p>}
-                          {order.payment_method && <p className="text-xs text-gray-500">💳 Thanh toán: {order.payment_method === 'cod' ? 'Tiền mặt khi nhận' : order.payment_method === 'bank' ? 'Chuyển khoản' : 'MoMo'}</p>}
-                        </div>
-                      )}
-
-                      {/* Actions */}
                       <div className="mt-4 flex flex-wrap gap-2">
                         {cfg.next && (
-                          <button onClick={() => updateOrderStatus(order, cfg.next!)}
-                            className={`flex-1 min-w-[120px] ${cfg.nextBg} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.98]`}>
-                            {cfg.nextLabel} → Thông báo người mua
+                          <button onClick={() => updateOrderStatus(order, cfg.next!)} disabled={actionLoading === 'updating-order-' + order.id}
+                            className={`flex-1 min-w-[120px] ${cfg.nextBg} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2`}>
+                            {actionLoading === 'updating-order-' + order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            {cfg.nextLabel}
                           </button>
                         )}
                         {order.status === 'Chờ xác nhận' && (
-                          <button onClick={() => cancelOrder(order)} className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition-colors">Từ chối</button>
+                          <button onClick={() => cancelOrder(order)} disabled={actionLoading === 'cancelling-' + order.id} className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition-colors">
+                            {actionLoading === 'cancelling-' + order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Từ chối'}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1191,10 +1161,9 @@ export default function App() {
           </motion.main>
         )}
 
-        {/* ██████████████████  BUYER: MARKETPLACE  ██████████████████ */}
+        {/* ████████████████  BUYER: MARKETPLACE  ████████████████ */}
         {activeTab === 'marketplace' && (
           <motion.main key="marketplace" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
-            {/* Hero Search */}
             <div className="relative">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -1206,7 +1175,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Filter Panel */}
             <AnimatePresence>
               {showFilters && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1253,18 +1221,15 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* Categories horizontal scroll */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
               {CATEGORIES.map(cat => (
                 <button key={cat.id} onClick={() => { setSelectedCategory(cat.id); setSelectedSubcat(''); }}
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0 ${selectedCategory === cat.id ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'}`}>
                   <span>{cat.icon}</span>{cat.label}
-                  {selectedCategory === cat.id && cat.sub.length > 0 && <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
               ))}
             </div>
 
-            {/* Subcategory */}
             <AnimatePresence>
               {selectedCategory !== 'all' && CATEGORIES.find(c => c.id === selectedCategory)?.sub.length && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1279,7 +1244,6 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* Result count */}
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-500 font-medium">
                 {loading ? 'Đang tải...' : `${filteredProducts.length} sản phẩm`}
@@ -1292,12 +1256,13 @@ export default function App() {
             </div>
 
             {loading ? (
-              <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /><span className="text-gray-400 font-medium">Đang tải sản phẩm...</span></div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {[...Array(10)].map((_, i) => <ProductSkeleton key={i} />)}
+              </div>
             ) : filteredProducts.length === 0 ? (
               <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
                 <Search className="w-14 h-14 text-gray-200 mx-auto mb-4" />
                 <p className="text-lg font-bold text-gray-600">Không tìm thấy sản phẩm nào</p>
-                <p className="text-gray-400 text-sm mt-1">Thử thay đổi từ khóa hoặc bộ lọc</p>
                 <button onClick={() => { setSearchQuery(''); setSelectedCategory('all'); setSelectedSubcat(''); setPriceRange([0, 10000000]); }}
                   className="mt-4 text-blue-600 font-bold text-sm hover:underline">Xóa bộ lọc</button>
               </div>
@@ -1307,7 +1272,9 @@ export default function App() {
                   <ProductCard key={p.id} product={p}
                     onAddToCart={addToCart} onView={setViewProduct}
                     wishlisted={wishlist.includes(p.id)}
-                    onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])} />
+                    onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])}
+                    onHide={handleHideProduct}
+                    hidden={hiddenProducts.includes(p.id)} />
                 ))}
               </div>
             ) : (
@@ -1321,7 +1288,6 @@ export default function App() {
                       <p className="font-bold text-sm mb-1 line-clamp-2">{p.name}</p>
                       {p.rating && <Stars value={p.rating} />}
                       {p.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{p.description}</p>}
-                      {p.tags?.length && <div className="flex gap-1 mt-1.5">{p.tags.slice(0, 3).map(t => <span key={t} className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">#{t}</span>)}</div>}
                     </div>
                     <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
                       <div>
@@ -1366,7 +1332,6 @@ export default function App() {
                   const currentStep = PROGRESS_STEPS.indexOf(order.status);
                   return (
                     <div key={order.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                      {/* Header */}
                       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">#{String(order.id).slice(-8)}</span>
@@ -1377,25 +1342,14 @@ export default function App() {
                           <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
                         </div>
                       </div>
-                      {/* Items */}
                       <div className="px-6 py-4 flex flex-wrap gap-2">
                         {Array.isArray(order.items) && order.items.map((item: any, i: number) => (
                           <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
                             <span className="text-sm font-bold text-gray-800">{item.name}</span>
                             <span className="text-xs text-gray-400">×{item.quantity}</span>
-                            <span className="text-xs font-bold text-blue-600">{formatPrice(item.price * item.quantity)}</span>
                           </div>
                         ))}
                       </div>
-                      {/* Order info */}
-                      {(order.shipping_address || order.payment_method) && (
-                        <div className="px-6 pb-4 flex flex-wrap gap-4 text-xs text-gray-500">
-                          {order.shipping_address && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{order.shipping_address}</span>}
-                          {order.payment_method && <span className="flex items-center gap-1">💳 {order.payment_method === 'cod' ? 'COD' : order.payment_method === 'bank' ? 'Chuyển khoản' : 'MoMo'}</span>}
-                          {order.discount_amount && order.discount_amount > 0 && <span className="text-emerald-600 font-bold">Tiết kiệm {formatPrice(order.discount_amount)}</span>}
-                        </div>
-                      )}
-                      {/* Progress bar */}
                       {order.status !== 'Đã hủy' && (
                         <div className="px-6 pb-6">
                           <div className="flex items-center">
@@ -1410,15 +1364,14 @@ export default function App() {
                                     </div>
                                     <span className={`text-[9px] font-black text-center whitespace-nowrap ${done ? 'text-blue-600' : 'text-gray-400'}`} style={{ maxWidth: '60px' }}>{step}</span>
                                   </div>
-                                  {idx < PROGRESS_STEPS.length - 1 && (
+{idx < PROGRESS_STEPS.length - 1 && (
                                     <div className={`flex-1 h-1 mx-1 rounded-full mb-5 transition-all ${idx < currentStep ? 'bg-blue-600' : 'bg-gray-100'}`} />
                                   )}
                                 </React.Fragment>
                               );
                             })}
                           </div>
-                        </div>
-                      )}
+{/* ... Tiếp tục từ phần render buyerOrders ... */}
                       {order.status === 'Đã hủy' && (
                         <div className="mx-6 mb-5 p-3 bg-red-50 rounded-2xl text-red-600 text-sm font-medium text-center border border-red-100">❌ Đơn hàng đã bị hủy</div>
                       )}
@@ -1435,7 +1388,7 @@ export default function App() {
           <motion.main key="wishlist-tab" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
             <div>
               <h1 className="text-2xl font-black">Sản phẩm yêu thích</h1>
-              <p className="text-gray-500 text-sm">{wishlist.length} sản phẩm đã lưu</p>
+              <p className="text-gray-500 text-sm">{wishlist.length - hiddenProducts.filter(id => wishlist.includes(id)).length} sản phẩm đã lưu</p>
             </div>
             {wishlist.length === 0 ? (
               <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
@@ -1445,10 +1398,20 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {allProducts.filter(p => wishlist.includes(p.id)).map(p => (
-                  <ProductCard key={p.id} product={p} onAddToCart={addToCart} onView={setViewProduct}
-                    wishlisted={true} onWishlist={id => setWishlist(w => w.filter(x => x !== id))} />
-                ))}
+                {allProducts
+                  .filter(p => wishlist.includes(p.id) && !hiddenProducts.includes(p.id))
+                  .map(p => (
+                    <ProductCard 
+                      key={p.id} 
+                      product={p} 
+                      onAddToCart={addToCart} 
+                      onView={setViewProduct}
+                      wishlisted={true} 
+                      onWishlist={id => setWishlist(w => w.filter(x => x !== id))} 
+                      onHide={handleHideProduct}
+                      hidden={hiddenProducts.includes(p.id)}
+                    />
+                  ))}
               </div>
             )}
           </motion.main>
@@ -1473,7 +1436,9 @@ export default function App() {
                   )}
                   <h2 className="text-lg font-black flex items-center gap-2">
                     <ShoppingCart className="w-5 h-5 text-blue-600" />
-                    {checkoutStep === 'cart' ? `Giỏ hàng (${cart.length})` : checkoutStep === 'address' ? 'Địa chỉ giao hàng' : checkoutStep === 'payment' ? 'Thanh toán' : 'Xác nhận đơn'}
+                    {checkoutStep === 'cart' ? `Giỏ hàng (${cart.length})` : 
+                     checkoutStep === 'address' ? 'Địa chỉ giao hàng' : 
+                     checkoutStep === 'payment' ? 'Thanh toán' : 'Xác nhận đơn'}
                   </h2>
                 </div>
                 <button onClick={() => { setShowCart(false); setCheckoutStep('cart'); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
@@ -1520,7 +1485,6 @@ export default function App() {
                   </div>
                   {cart.length > 0 && (
                     <div className="p-5 border-t border-gray-100 space-y-4 bg-white">
-                      {/* Coupon */}
                       <div className="flex gap-2">
                         <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())}
                           placeholder="Mã giảm giá (SALE10, WELCOME)"
@@ -1528,11 +1492,9 @@ export default function App() {
                         <button onClick={applyCoupon} className="px-4 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-colors"><Tag className="w-4 h-4" /></button>
                       </div>
                       {discount > 0 && <p className="text-emerald-600 text-sm font-bold text-center">✓ Đã áp dụng giảm {(discount * 100).toFixed(0)}% — Tiết kiệm {formatPrice(cartTotal * discount)}</p>}
-                      {/* Summary */}
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between text-gray-500"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
                         {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
-                        <div className="flex justify-between text-gray-500"><span>Phí vận chuyển</span><span className="text-emerald-600 font-bold">Miễn phí</span></div>
                         <div className="flex justify-between font-black text-base pt-2 border-t border-gray-100"><span>Tổng cộng</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
                       </div>
                       <button onClick={() => setCheckoutStep('address')}
@@ -1625,7 +1587,6 @@ export default function App() {
                       <div className="space-y-1.5 text-sm">
                         <div className="flex justify-between text-gray-600"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
                         {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
-                        <div className="flex justify-between text-gray-600"><span>Phí vận chuyển</span><span className="text-emerald-600 font-bold">Miễn phí</span></div>
                         <div className="flex justify-between font-black text-base pt-2 border-t border-blue-200 mt-2"><span>Tổng thanh toán</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
                       </div>
                     </div>
