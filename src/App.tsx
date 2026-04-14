@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  ShoppingCart, Plus, Minus, Trash2, CreditCard, Coffee, Utensils, Zap, 
+  ShoppingCart, Plus, Minus, Trash2, Zap, 
   Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign, 
   LogIn, UserPlus, LogOut, Mail, Lock, Store, User, PackagePlus, 
-  ShoppingBag, Search, Filter, ChevronRight, Star, Tag, Edit
+  ShoppingBag, Search, Filter, ChevronRight, Star, Edit,
+  Bell, BellRing, CheckCircle2, XCircle, Package, Truck, Check, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
@@ -28,7 +29,18 @@ interface Order {
   total_price: number;
   items: any;
   seller_id: string;
+  buyer_id: string;
   status: string;
+}
+
+interface Notification {
+  id: number;
+  user_id: string;
+  order_id: number;
+  message: string;
+  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order';
+  is_read: boolean;
+  created_at: string;
 }
 
 interface Toast {
@@ -37,6 +49,7 @@ interface Toast {
   type: 'success' | 'error';
 }
 
+// ===================== AUTH FORM =====================
 function AuthForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -63,7 +76,7 @@ function AuthForm() {
           }
         });
         if (error) throw error;
-        alert('Đăng ký thành công! Một email xác nhận đã được gửi đến hộp thư của bạn. Vui lòng kiểm tra và xác nhận trước khi đăng nhập.');
+        alert('Đăng ký thành công! Một email xác nhận đã được gửi đến bạn. Vui lòng kiểm tra và xác nhận trước khi đăng nhập.');
       }
     } catch (err: any) {
       setError(err.message || 'Đã có lỗi xảy ra');
@@ -77,7 +90,7 @@ function AuthForm() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'https://pos-react-livid.vercel.app'
+          redirectTo: window.location.origin
         }
       });
       if (error) throw error;
@@ -136,27 +149,13 @@ function AuthForm() {
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Bạn là ai?</label>
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRole('buyer')}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
-                    role === 'buyer' 
-                      ? 'border-blue-600 bg-blue-50 text-blue-600' 
-                      : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'
-                  }`}
-                >
+                <button type="button" onClick={() => setRole('buyer')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'buyer' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'}`}>
                   <User className="w-6 h-6" />
                   <span className="text-xs font-bold">Người mua</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setRole('seller')}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
-                    role === 'seller' 
-                      ? 'border-blue-600 bg-blue-50 text-blue-600' 
-                      : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'
-                  }`}
-                >
+                <button type="button" onClick={() => setRole('seller')}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'seller' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'}`}>
                   <Store className="w-6 h-6" />
                   <span className="text-xs font-bold">Người bán</span>
                 </button>
@@ -171,18 +170,9 @@ function AuthForm() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : isLogin ? (
-              <LogIn className="w-5 h-5" />
-            ) : (
-              <UserPlus className="w-5 h-5" />
-            )}
+          <button type="submit" disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]">
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLogin ? <LogIn className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
             {isLogin ? 'Đăng nhập' : 'Đăng ký'}
           </button>
         </form>
@@ -193,36 +183,20 @@ function AuthForm() {
           <div className="flex-1 h-px bg-[#E9ECEF]"></div>
         </div>
 
-        <button
-          onClick={handleGoogleLogin}
-          className="w-full mt-6 bg-white border-2 border-[#E9ECEF] hover:border-gray-300 text-gray-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-        >
+        <button onClick={handleGoogleLogin}
+          className="w-full mt-6 bg-white border-2 border-[#E9ECEF] hover:border-gray-300 text-gray-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]">
           <svg className="w-5 h-5" viewBox="0 0 24 24">
-            <path
-              fill="#4285F4"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-            />
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
           </svg>
           Tiếp tục với Google
         </button>
 
         <div className="mt-8 pt-6 border-t border-[#E9ECEF] text-center">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
-          >
+          <button onClick={() => setIsLogin(!isLogin)}
+            className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors">
             {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
           </button>
         </div>
@@ -231,15 +205,14 @@ function AuthForm() {
   );
 }
 
+// ===================== ROLE SELECTION =====================
 function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => void }) {
   const [loading, setLoading] = useState(false);
 
   const handleSelect = async (selectedRole: 'seller' | 'buyer') => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.updateUser({
-        data: { role: selectedRole }
-      });
+      const { error } = await supabase.auth.updateUser({ data: { role: selectedRole } });
       if (error) throw error;
       onSelect(selectedRole);
     } catch (err: any) {
@@ -261,26 +234,18 @@ function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => v
         </div>
         <h1 className="text-4xl font-black tracking-tight mb-4">Chào mừng bạn!</h1>
         <p className="text-gray-500 text-lg font-medium mb-12">Hãy chọn vai trò của bạn để bắt đầu trải nghiệm Marketplace</p>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <button
-            disabled={loading}
-            onClick={() => handleSelect('buyer')}
-            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]"
-          >
+          <button disabled={loading} onClick={() => handleSelect('buyer')}
+            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]">
             <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
               <ShoppingBag className="w-8 h-8" />
             </div>
             <h3 className="text-2xl font-black mb-2">Tôi là Người mua</h3>
-            <p className="text-gray-500 font-medium">Khám phá hàng ngàn sản phẩm từ các người bán uy tín.</p>
+            <p className="text-gray-500 font-medium">Khám phá hàng ngàn sản phẩm tuyệt vời từ các người bán.</p>
             <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
           </button>
-
-          <button
-            disabled={loading}
-            onClick={() => handleSelect('seller')}
-            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]"
-          >
+          <button disabled={loading} onClick={() => handleSelect('seller')}
+            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]">
             <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
               <Store className="w-8 h-8" />
             </div>
@@ -289,7 +254,6 @@ function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => v
             <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
           </button>
         </div>
-        
         {loading && (
           <div className="mt-8 flex items-center justify-center gap-2 text-blue-600 font-bold">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -301,6 +265,82 @@ function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => v
   );
 }
 
+// ===================== NOTIFICATION PANEL =====================
+function NotificationPanel({ 
+  notifications, 
+  onClose, 
+  onMarkRead,
+  formatPrice
+}: { 
+  notifications: Notification[], 
+  onClose: () => void,
+  onMarkRead: (id: number) => void,
+  formatPrice: (p: number) => string
+}) {
+  const getIcon = (type: string) => {
+    switch(type) {
+      case 'order_confirmed': return <CheckCircle2 className="w-5 h-5 text-green-500" />;
+      case 'order_shipped': return <Truck className="w-5 h-5 text-blue-500" />;
+      case 'order_completed': return <Package className="w-5 h-5 text-purple-500" />;
+      case 'new_order': return <ShoppingBag className="w-5 h-5 text-orange-500" />;
+      default: return <Bell className="w-5 h-5 text-gray-500" />;
+    }
+  };
+
+  const getBg = (type: string) => {
+    switch(type) {
+      case 'order_confirmed': return 'bg-green-50 border-green-100';
+      case 'order_shipped': return 'bg-blue-50 border-blue-100';
+      case 'order_completed': return 'bg-purple-50 border-purple-100';
+      case 'new_order': return 'bg-orange-50 border-orange-100';
+      default: return 'bg-gray-50 border-gray-100';
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="relative w-full max-w-sm bg-white h-full flex flex-col shadow-2xl">
+        <div className="p-6 border-b border-[#E9ECEF] flex justify-between items-center">
+          <h2 className="text-xl font-black flex items-center gap-2">
+            <BellRing className="w-5 h-5 text-blue-600" /> Thông báo
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {notifications.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
+              <Bell className="w-16 h-16 opacity-10" />
+              <p className="font-bold">Chưa có thông báo nào</p>
+            </div>
+          ) : (
+            notifications.map(notif => (
+              <motion.div key={notif.id} layout
+                className={`p-4 rounded-2xl border ${getBg(notif.type)} ${!notif.is_read ? 'ring-2 ring-blue-200' : ''} cursor-pointer`}
+                onClick={() => !notif.is_read && onMarkRead(notif.id)}>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5">{getIcon(notif.type)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-${!notif.is_read ? 'bold' : 'medium'} text-gray-900`}>{notif.message}</p>
+                    <p className="text-xs text-gray-400 mt-1">{new Date(notif.created_at).toLocaleString('vi-VN')}</p>
+                  </div>
+                  {!notif.is_read && <div className="w-2 h-2 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" />}
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ===================== MAIN APP =====================
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -308,19 +348,14 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [myBuyerOrders, setMyBuyerOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
-  };
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Seller specific state
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -328,7 +363,6 @@ export default function App() {
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Supabase Config Check
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -337,78 +371,126 @@ export default function App() {
       if (!session?.user) return null;
       return session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined;
     } catch (err) {
-      console.error('Error parsing role:', err);
       return null;
     }
   }, [session]);
 
-  useEffect(() => {
-    // Set default tab based on role
-    if (role === 'seller') setActiveTab('my-products');
-    else if (role === 'buyer') setActiveTab('marketplace');
-  }, [role]);
+  const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
 
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  const formatPrice = (price: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+
+  const isVideo = (url: string) => {
+    if (!url) return false;
+    return ['.mp4', '.webm', '.ogg', '.mov'].some(ext => url.toLowerCase().split('?')[0].endsWith(ext));
+  };
+
+  // ---- Auth ----
   useEffect(() => {
-    // Initial session check
     const checkSession = async () => {
       try {
         setAuthLoading(true);
-        setError(null);
-        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
       } catch (err: any) {
-        console.error('Auth session error:', err);
-        setError('Lỗi xác thực hệ thống. Vui lòng tải lại trang.');
+        setError('Lỗi xác thực hệ thống.');
       } finally {
         setAuthLoading(false);
       }
     };
-
     checkSession();
-
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
+  // ---- Default tab ----
+  useEffect(() => {
+    if (role === 'seller') setActiveTab('my-products');
+    else if (role === 'buyer') setActiveTab('marketplace');
+  }, [role]);
+
+  // ---- Fetch products ----
   useEffect(() => {
     if (!session) return;
     fetchProducts();
   }, [session, activeTab]);
 
+  // ---- Fetch orders for seller ----
   useEffect(() => {
-    if (activeTab === 'my-orders' && role === 'seller') {
-      fetchOrders();
-    }
+    if (activeTab === 'my-orders' && role === 'seller') fetchOrders();
   }, [activeTab, role]);
+
+  // ---- Fetch buyer orders ----
+  useEffect(() => {
+    if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders();
+  }, [activeTab, role]);
+
+  // ---- Fetch notifications ----
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetchNotifications();
+    
+    // Realtime subscription for notifications
+    const channel = supabase
+      .channel('notifications-channel')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${session.user.id}`
+      }, (payload) => {
+        const newNotif = payload.new as Notification;
+        setNotifications(prev => [newNotif, ...prev]);
+        showToast(`🔔 ${newNotif.message}`, 'success');
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
+
+  // ---- Realtime: new orders for seller ----
+  useEffect(() => {
+    if (!session?.user?.id || role !== 'seller') return;
+    
+    const channel = supabase
+      .channel('seller-orders-channel')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'orders',
+        filter: `seller_id=eq.${session.user.id}`
+      }, (payload) => {
+        showToast('🛍️ Bạn có đơn hàng mới!', 'success');
+        if (activeTab === 'my-orders') fetchOrders();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, role, activeTab]);
 
   async function fetchProducts() {
     try {
       setLoading(true);
-      setError(null);
-      
       let query = supabase.from('products').select('*');
-      
       if (role === 'seller' && activeTab === 'my-products') {
         const userId = session?.user?.id;
-        if (userId) {
-          query = query.eq('seller_id', userId);
-        } else {
-          setProducts([]);
-          return;
-        }
+        if (userId) query = query.eq('seller_id', userId);
+        else { setProducts([]); return; }
       }
-
       const { data, error: fetchError } = await query;
       if (fetchError) throw fetchError;
       setProducts(data || []);
     } catch (err: any) {
-      console.error('Error fetching products:', err);
-      setError(err.message || 'Không thể tải danh sách sản phẩm. Vui lòng kiểm tra kết nối.');
+      setError(err.message || 'Không thể tải danh sách sản phẩm.');
     } finally {
       setLoading(false);
     }
@@ -417,15 +499,10 @@ export default function App() {
   async function fetchOrders() {
     const userId = session?.user?.id;
     if (!userId) return;
-    
     try {
       setReportsLoading(true);
       const { data, error: fetchError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('seller_id', userId)
-        .order('created_at', { ascending: false });
-
+        .from('orders').select('*').eq('seller_id', userId).order('created_at', { ascending: false });
       if (fetchError) throw fetchError;
       setOrders(data || []);
     } catch (err: any) {
@@ -435,75 +512,68 @@ export default function App() {
     }
   }
 
+  async function fetchBuyerOrders() {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    try {
+      setReportsLoading(true);
+      const { data, error: fetchError } = await supabase
+        .from('orders').select('*').eq('buyer_id', userId).order('created_at', { ascending: false });
+      if (fetchError) throw fetchError;
+      setMyBuyerOrders(data || []);
+    } catch (err: any) {
+      console.error('Error fetching buyer orders:', err);
+    } finally {
+      setReportsLoading(false);
+    }
+  }
+
+  async function fetchNotifications() {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    const { data } = await supabase
+      .from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
+    setNotifications(data || []);
+  }
+
+  // ---- Add/Edit Product ----
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user?.id) {
-      alert('Vui lòng đăng nhập để thực hiện thao tác này');
-      return;
-    }
-    if (!editingProduct && !selectedFile) {
-      alert('Vui lòng chọn ảnh hoặc video sản phẩm');
-      return;
-    }
+    if (!session?.user?.id) { alert('Vui lòng đăng nhập'); return; }
+    if (!editingProduct && !selectedFile) { alert('Vui lòng chọn ảnh hoặc video sản phẩm'); return; }
 
     try {
       setLoading(true);
-      
       let imageUrl = editingProduct?.image || '';
-
-      // 1. Upload file if selected
       if (selectedFile && session?.user?.id) {
         const fileName = `${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
         const filePath = `${session?.user?.id}/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('assets')
-          .upload(filePath, selectedFile);
-
+        const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, selectedFile);
         if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('assets')
-          .getPublicUrl(filePath);
-        
+        const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(filePath);
         imageUrl = publicUrl;
       }
-
-      // 2. Insert or Update product
       if (editingProduct && session?.user?.id) {
-        const { error: updateError } = await supabase
-          .from('products')
-          .update({
-            name: newProduct.name,
-            price: Number(newProduct.price),
-            category: newProduct.category,
-            image: imageUrl
-          })
-          .eq('id', editingProduct.id)
-          .eq('seller_id', session?.user?.id); // Security check
-
+        const { error: updateError } = await supabase.from('products').update({
+          name: newProduct.name, price: Number(newProduct.price), category: newProduct.category, image: imageUrl
+        }).eq('id', editingProduct.id).eq('seller_id', session?.user?.id);
         if (updateError) throw updateError;
-        alert('Cập nhật sản phẩm thành công!');
+        showToast('Cập nhật sản phẩm thành công!');
       } else if (session?.user?.id) {
         const { error: insertError } = await supabase.from('products').insert([{
-          name: newProduct.name,
-          price: Number(newProduct.price),
-          category: newProduct.category,
-          image: imageUrl,
-          seller_id: session?.user?.id
+          name: newProduct.name, price: Number(newProduct.price), category: newProduct.category,
+          image: imageUrl, seller_id: session?.user?.id
         }]);
-
         if (insertError) throw insertError;
-        alert('Thêm sản phẩm thành công!');
+        showToast('Thêm sản phẩm thành công!');
       }
-      
       setShowAddProduct(false);
       setEditingProduct(null);
       setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
       setSelectedFile(null);
       fetchProducts();
     } catch (err: any) {
-      alert('Lỗi: ' + (err.message || 'Đã có lỗi xảy ra khi lưu sản phẩm'));
+      showToast('Lỗi: ' + (err.message || 'Đã có lỗi xảy ra'), 'error');
     } finally {
       setLoading(false);
     }
@@ -512,20 +582,14 @@ export default function App() {
   const handleDeleteProduct = async (id: number) => {
     if (!session?.user?.id) return;
     if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return;
-
     try {
       setLoading(true);
-      const { error: deleteError } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', id)
-        .eq('seller_id', session?.user?.id); // Security check
-
+      const { error: deleteError } = await supabase.from('products').delete().eq('id', id).eq('seller_id', session?.user?.id);
       if (deleteError) throw deleteError;
-      alert('Đã xóa sản phẩm');
+      showToast('Đã xóa sản phẩm');
       fetchProducts();
     } catch (err: any) {
-      alert('Lỗi xóa sản phẩm: ' + (err.message || 'Không thể xóa sản phẩm'));
+      showToast('Lỗi xóa sản phẩm: ' + (err.message || 'Không thể xóa'), 'error');
     } finally {
       setLoading(false);
     }
@@ -533,40 +597,31 @@ export default function App() {
 
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
-    setNewProduct({
-      name: product.name,
-      price: product.price.toString(),
-      category: product.category
-    });
+    setNewProduct({ name: product.name, price: product.price.toString(), category: product.category });
     setShowAddProduct(true);
   };
 
+  // ---- Cart ----
   const addToCart = (product: Product) => {
     setCart(prev => {
-      // Check if trying to add from a different seller
       if (prev.length > 0 && prev[0].seller_id !== product.seller_id) {
-        if (confirm('Giỏ hàng hiện tại chứa sản phẩm của người bán khác. Bạn có muốn làm trống giỏ hàng để thêm sản phẩm này không?')) {
-          showToast('Đã làm mới giỏ hàng với sản phẩm mới', 'success');
+        if (confirm('Giỏ hàng hiện tại có sản phẩm từ người bán khác. Bạn có muốn làm mới giỏ hàng không?')) {
+          showToast('Đã làm mới giỏ hàng', 'success');
           return [{ ...product, quantity: 1 }];
         }
         return prev;
       }
-
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
         showToast(`Đã tăng số lượng ${product.name}`, 'success');
-        return prev.map(item =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
+        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
       showToast(`Đã thêm ${product.name} vào giỏ`, 'success');
       return [...prev, { ...product, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (productId: number) => {
-    setCart(prev => prev.filter(item => item.id !== productId));
-  };
+  const removeFromCart = (productId: number) => setCart(prev => prev.filter(item => item.id !== productId));
 
   const updateQuantity = (productId: number, delta: number) => {
     setCart(prev => prev.map(item => {
@@ -578,69 +633,80 @@ export default function App() {
     }));
   };
 
-  const total = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  }, [cart]);
+  const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
+  const totalRevenue = useMemo(() => orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0), [orders]);
 
-  const totalRevenue = useMemo(() => {
-    return orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0);
-  }, [orders]);
-
-  const isVideo = (url: string) => {
-    if (!url) return false;
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov'];
-    return videoExtensions.some(ext => url.toLowerCase().split('?')[0].endsWith(ext));
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
-  };
-
+  // ---- Checkout: người mua đặt hàng ----
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    const buyerId = session?.user?.id;
+    if (!buyerId) return;
 
     try {
       setLoading(true);
-      
       const orderData = {
         total_price: total,
         seller_id: cart[0].seller_id,
+        buyer_id: buyerId,
         status: 'Chờ xác nhận',
-        items: cart.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity
-        }))
+        items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity }))
       };
 
-      const { error: checkoutError } = await supabase
-        .from('orders')
-        .insert([orderData]);
-
+      const { data: newOrder, error: checkoutError } = await supabase
+        .from('orders').insert([orderData]).select().single();
       if (checkoutError) throw checkoutError;
 
-      showToast('Đặt hàng thành công! Đang chờ người bán xác nhận', 'success');
+      // Tạo thông báo cho NGƯỜI BÁN
+      await supabase.from('notifications').insert([{
+        user_id: cart[0].seller_id,
+        order_id: newOrder.id,
+        message: `🛍️ Bạn có đơn hàng mới #${String(newOrder.id).slice(-6)} - ${formatPrice(total)}`,
+        type: 'new_order',
+        is_read: false
+      }]);
+
+      showToast('Đặt hàng thành công! Đang chờ người bán xác nhận 🎉', 'success');
       setCart([]);
       setShowCart(false);
     } catch (err: any) {
-      console.error('Checkout error:', err);
       showToast('Lỗi đặt hàng: ' + (err.message || 'Không thể lưu đơn hàng'), 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const updateOrderStatus = async (orderId: number, newStatus: string) => {
+  // ---- Update order status (người bán) + gửi thông báo người mua ----
+  const updateOrderStatus = async (order: Order, newStatus: string) => {
     try {
       setReportsLoading(true);
       const { error: updateError } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
-
+        .from('orders').update({ status: newStatus }).eq('id', order.id);
       if (updateError) throw updateError;
-      
+
+      // Tạo thông báo cho NGƯỜI MUA
+      let message = '';
+      let type: Notification['type'] = 'order_confirmed';
+      if (newStatus === 'Đã xác nhận') {
+        message = `✅ Đơn hàng #${String(order.id).slice(-6)} của bạn đã được xác nhận!`;
+        type = 'order_confirmed';
+      } else if (newStatus === 'Đang giao') {
+        message = `🚚 Đơn hàng #${String(order.id).slice(-6)} đang được giao đến bạn!`;
+        type = 'order_shipped';
+      } else if (newStatus === 'Hoàn thành') {
+        message = `🎉 Đơn hàng #${String(order.id).slice(-6)} đã hoàn thành. Cảm ơn bạn!`;
+        type = 'order_completed';
+      }
+
+      if (message && order.buyer_id) {
+        await supabase.from('notifications').insert([{
+          user_id: order.buyer_id,
+          order_id: order.id,
+          message,
+          type,
+          is_read: false
+        }]);
+      }
+
       showToast(`Đã cập nhật trạng thái: ${newStatus}`, 'success');
       fetchOrders();
     } catch (err: any) {
@@ -650,17 +716,27 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const markNotificationRead = async (id: number) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
   };
 
-  // Safety check for environment variables
+  const handleLogout = async () => { await supabase.auth.signOut(); };
+
+  const statusConfig: Record<string, { color: string; label: string; next?: string; nextLabel?: string; nextColor?: string }> = {
+    'Chờ xác nhận': { color: 'bg-yellow-100 text-yellow-700', label: 'Chờ xác nhận', next: 'Đã xác nhận', nextLabel: 'Xác nhận', nextColor: 'bg-green-600 hover:bg-green-700' },
+    'Đã xác nhận':  { color: 'bg-green-100 text-green-700',  label: 'Đã xác nhận',  next: 'Đang giao',   nextLabel: 'Giao hàng', nextColor: 'bg-blue-600 hover:bg-blue-700' },
+    'Đang giao':    { color: 'bg-blue-100 text-blue-700',    label: 'Đang giao',    next: 'Hoàn thành',  nextLabel: 'Hoàn thành', nextColor: 'bg-purple-600 hover:bg-purple-700' },
+    'Hoàn thành':   { color: 'bg-purple-100 text-purple-700', label: 'Hoàn thành' },
+  };
+
+  // ===== Safety checks =====
   if (!supabaseUrl || !supabaseKey) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center">
         <AlertCircle className="w-16 h-16 text-red-600 mb-4" />
         <h1 className="text-2xl font-black text-red-900 mb-2">Thiếu cấu hình Supabase</h1>
-        <p className="text-red-700 max-w-md">Vui lòng kiểm tra các biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trong cài đặt dự án của bạn.</p>
+        <p className="text-red-700 max-w-md">Vui lòng kiểm tra các biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY.</p>
       </div>
     );
   }
@@ -680,49 +756,33 @@ export default function App() {
         <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
         <h2 className="text-xl font-bold mb-2">Đã có lỗi xảy ra</h2>
         <p className="text-gray-500 mb-6">{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-blue-600/20"
-        >
-          Tải lại trang
-        </button>
+        <button onClick={() => window.location.reload()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-blue-600/20">Tải lại trang</button>
       </div>
     );
   }
 
-  if (!session) {
-    return <AuthForm />;
-  }
+  if (!session) return <AuthForm />;
 
   if (!role) {
     return <RoleSelection onSelect={(selectedRole) => {
       try {
-        supabase.auth.getSession().then(({ data: { session: updatedSession } }) => {
-          setSession(updatedSession);
-        });
-      } catch (err) {
-        console.error('Error refreshing session:', err);
-      }
+        supabase.auth.getSession().then(({ data: { session: updatedSession } }) => { setSession(updatedSession); });
+      } catch (err) {}
     }} />;
   }
 
+  // ===== MAIN RENDER =====
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
-      {/* Toast Notifications */}
+
+      {/* ── Toast Notifications ── */}
       <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3">
         <AnimatePresence>
           {toasts.map(toast => (
-            <motion.div
-              key={toast.id}
-              initial={{ opacity: 0, x: 50, scale: 0.9 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
+            <motion.div key={toast.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-              className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md ${
-                toast.type === 'success' 
-                  ? 'bg-green-500/90 border-green-400 text-white' 
-                  : 'bg-red-500/90 border-red-400 text-white'
-              }`}
-            >
+              className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md ${toast.type === 'success' ? 'bg-green-500/90 border-green-400 text-white' : 'bg-red-500/90 border-red-400 text-white'}`}>
               {toast.type === 'success' ? <Zap className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
               <span className="font-bold text-sm">{toast.message}</span>
             </motion.div>
@@ -730,7 +790,7 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Navbar */}
+      {/* ── Navbar ── */}
       <nav className="bg-white border-b border-[#E9ECEF] px-6 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center h-20">
           <div className="flex items-center gap-10">
@@ -740,55 +800,37 @@ export default function App() {
               </div>
               <span className="text-2xl font-black tracking-tight">Marketplace</span>
             </div>
-            
             <div className="hidden md:flex gap-2">
               {role === 'seller' ? (
                 <>
-                  <button
-                    onClick={() => setActiveTab('my-products')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                      activeTab === 'my-products' 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                        : 'text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    <LayoutDashboard className="w-4 h-4" />
-                    Sản phẩm của tôi
+                  <button onClick={() => setActiveTab('my-products')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-products' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <LayoutDashboard className="w-4 h-4" /> Sản phẩm của tôi
                   </button>
-                  <button
-                    onClick={() => setActiveTab('my-orders')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                      activeTab === 'my-orders' 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                        : 'text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    Đơn hàng của tôi
+                  <button onClick={() => setActiveTab('my-orders')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-orders' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <BarChart3 className="w-4 h-4" /> Đơn hàng nhận được
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => setActiveTab('marketplace')}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                    activeTab === 'marketplace' 
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                      : 'text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  <Zap className="w-4 h-4" />
-                  Chợ chung
-                </button>
+                <>
+                  <button onClick={() => setActiveTab('marketplace')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'marketplace' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Zap className="w-4 h-4" /> Chợ chung
+                  </button>
+                  <button onClick={() => setActiveTab('my-purchases')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-purchases' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Package className="w-4 h-4" /> Đơn của tôi
+                  </button>
+                </>
               )}
             </div>
           </div>
-          
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
+            {/* Cart button (buyer only) */}
             {role === 'buyer' && (
-              <button 
-                onClick={() => setShowCart(true)}
-                className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group"
-              >
+              <button onClick={() => setShowCart(true)}
+                className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
                 <ShoppingCart className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
                 {(cart || []).length > 0 && (
                   <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-lg">
@@ -797,110 +839,94 @@ export default function App() {
                 )}
               </button>
             )}
+            {/* Notification bell */}
+            <button onClick={() => setShowNotifications(true)}
+              className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
+              <Bell className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-lg animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
             <div className="text-right hidden sm:block">
               <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-0.5">
                 {role === 'seller' ? 'Người bán' : 'Người mua'}
               </p>
               <p className="text-sm font-bold text-gray-900">{session?.user?.email}</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100"
-              title="Đăng xuất"
-            >
+            <button onClick={handleLogout}
+              className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
       </nav>
 
+      {/* ── Notification Panel ── */}
+      <AnimatePresence>
+        {showNotifications && (
+          <NotificationPanel
+            notifications={notifications}
+            onClose={() => setShowNotifications(false)}
+            onMarkRead={markNotificationRead}
+            formatPrice={formatPrice}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── PAGES ── */}
       <AnimatePresence mode="wait">
+
+        {/* ===== SELLER: My Products ===== */}
         {activeTab === 'my-products' ? (
-          <motion.main
-            key="my-products"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="max-w-7xl mx-auto p-6 space-y-8"
-          >
+          <motion.main key="my-products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="max-w-7xl mx-auto p-6 space-y-8">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-3xl font-black tracking-tight">Cửa hàng của bạn</h2>
                 <p className="text-gray-500 font-medium">Quản lý các sản phẩm bạn đang kinh doanh</p>
               </div>
-              <button 
-                onClick={() => setShowAddProduct(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
-              >
-                <PackagePlus className="w-5 h-5" />
-                Thêm sản phẩm mới
+              <button onClick={() => setShowAddProduct(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]">
+                <PackagePlus className="w-5 h-5" /> Thêm sản phẩm mới
               </button>
             </div>
 
-            {/* Product Grid for Seller */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {loading ? (
                 <div className="col-span-full h-64 flex flex-col items-center justify-center text-gray-400 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                  <p className="font-medium">Đang tải sản phẩm của bạn...</p>
+                  <p className="font-medium">Đang tải sản phẩm...</p>
                 </div>
               ) : (products || []).length === 0 ? (
                 <div className="col-span-full h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[2rem] border-2 border-dashed border-[#E9ECEF]">
-                  <div className="bg-gray-50 p-8 rounded-full">
-                    <Store className="w-16 h-16 opacity-10" />
-                  </div>
+                  <div className="bg-gray-50 p-8 rounded-full"><Store className="w-16 h-16 opacity-10" /></div>
                   <div className="text-center">
                     <p className="text-xl font-bold text-gray-900">Chưa có sản phẩm nào</p>
-                    <p className="font-medium">Hãy bắt đầu bằng việc thêm sản phẩm đầu tiên của bạn</p>
+                    <p className="font-medium">Hãy bắt đầu bằng việc thêm sản phẩm đầu tiên</p>
                   </div>
-                  <button 
-                    onClick={() => setShowAddProduct(true)}
-                    className="mt-4 text-blue-600 font-bold hover:underline"
-                  >
-                    Thêm ngay
-                  </button>
+                  <button onClick={() => setShowAddProduct(true)} className="mt-4 text-blue-600 font-bold hover:underline">Thêm ngay</button>
                 </div>
               ) : (
                 (products || []).map((product) => (
                   <div key={product.id} className="bg-white rounded-3xl border border-[#E9ECEF] overflow-hidden shadow-sm group">
                     <div className="h-48 overflow-hidden relative">
                       {isVideo(product.image) ? (
-                        <video 
-                          src={product.image} 
-                          controls 
-                          className="w-full h-full object-cover"
-                        />
+                        <video src={product.image} controls className="w-full h-full object-cover" />
                       ) : (
-                        <img
-                          src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
-                          alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          referrerPolicy="no-referrer"
-                        />
+                        <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
                       )}
-                      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-wider">
-                        {product.category}
-                      </div>
+                      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-wider">{product.category}</div>
                     </div>
                     <div className="p-5">
                       <h3 className="font-bold text-lg mb-1 truncate">{product.name}</h3>
                       <div className="flex justify-between items-center">
                         <p className="text-blue-600 font-black text-xl">{formatPrice(product.price)}</p>
                         <div className="flex gap-2">
-                          <button 
-                            onClick={() => openEditModal(product)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-                            title="Chỉnh sửa"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteProduct(product.id)}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                            title="Xóa"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <button onClick={() => openEditModal(product)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" title="Chỉnh sửa"><Edit className="w-4 h-4" /></button>
+                          <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Xóa"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </div>
                     </div>
@@ -913,55 +939,28 @@ export default function App() {
             <AnimatePresence>
               {showAddProduct && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => setShowAddProduct(false)}
-                    className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-                  />
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl p-10"
-                  >
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    onClick={() => setShowAddProduct(false)} className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+                  <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl p-10">
                     <h3 className="text-2xl font-black mb-6">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
                     <form onSubmit={handleAddProduct} className="space-y-5">
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Tên sản phẩm</label>
-                        <input
-                          type="text"
-                          required
-                          value={newProduct.name}
-                          onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
-                          placeholder="Ví dụ: Cà phê sữa đá"
-                        />
+                        <input type="text" required value={newProduct.name} onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium" placeholder="Ví dụ: Cà phê sữa đá" />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Giá bán (VND)</label>
-                          <input
-                            type="number"
-                            required
-                            value={newProduct.price}
-                            onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
-                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
-                            placeholder="35000"
-                          />
+                          <input type="number" required value={newProduct.price} onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
+                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium" placeholder="35000" />
                         </div>
                         <div className="space-y-2">
                           <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Danh mục</label>
-                          <select
-                            value={newProduct.category}
-                            onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
-                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium appearance-none"
-                          >
-                            <option>Thực phẩm</option>
-                            <option>Đồ uống</option>
-                            <option>Thời trang</option>
-                            <option>Điện tử</option>
+                          <select value={newProduct.category} onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium appearance-none">
+                            <option>Thực phẩm</option><option>Đồ uống</option><option>Thời trang</option><option>Điện tử</option>
                           </select>
                         </div>
                       </div>
@@ -969,44 +968,17 @@ export default function App() {
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">
                           {editingProduct ? 'Thay đổi ảnh/video (Để trống nếu giữ cũ)' : 'Ảnh hoặc Video sản phẩm'}
                         </label>
-                        <div className="relative">
-                          <input
-                            type="file"
-                            required={!editingProduct}
-                            accept="image/*,video/*"
-                            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
-                          />
-                        </div>
-                        {selectedFile && (
-                          <p className="text-[10px] font-bold text-blue-600 mt-1">
-                            Đã chọn: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                          </p>
-                        )}
-                        {editingProduct && !selectedFile && (
-                          <p className="text-[10px] font-bold text-gray-400 mt-1">
-                            Đang sử dụng: {editingProduct?.image?.split('/').pop()?.slice(-20) || 'Chưa có ảnh'}
-                          </p>
-                        )}
+                        <input type="file" required={!editingProduct} accept="image/*,video/*"
+                          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100" />
+                        {selectedFile && <p className="text-[10px] font-bold text-blue-600 mt-1">Đã chọn: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>}
+                        {editingProduct && !selectedFile && <p className="text-[10px] font-bold text-gray-400 mt-1">Đang sử dụng: {editingProduct?.image?.split('/').pop()?.slice(-20) || 'Chưa có ảnh'}</p>}
                       </div>
                       <div className="flex gap-4 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddProduct(false);
-                            setEditingProduct(null);
-                            setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
-                            setSelectedFile(null);
-                          }}
-                          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-4 rounded-2xl transition-all"
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={loading}
-                          className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                        >
+                        <button type="button" onClick={() => { setShowAddProduct(false); setEditingProduct(null); setNewProduct({ name: '', price: '', category: 'Thực phẩm' }); setSelectedFile(null); }}
+                          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-4 rounded-2xl transition-all">Hủy</button>
+                        <button type="submit" disabled={loading}
+                          className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
                           {loading && <Loader2 className="w-5 h-5 animate-spin" />}
                           {editingProduct ? 'Cập nhật' : 'Lưu sản phẩm'}
                         </button>
@@ -1017,29 +989,23 @@ export default function App() {
               )}
             </AnimatePresence>
           </motion.main>
+
+        /* ===== SELLER: My Orders ===== */
         ) : activeTab === 'my-orders' ? (
-          <motion.main
-            key="my-orders"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="max-w-7xl mx-auto p-6 space-y-8"
-          >
+          <motion.main key="my-orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="max-w-7xl mx-auto p-6 space-y-8">
             <div className="flex justify-between items-end">
               <div>
-                <h2 className="text-3xl font-black tracking-tight">Đơn hàng của tôi</h2>
-                <p className="text-gray-500 font-medium">Theo dõi doanh thu và các đơn hàng mới nhất</p>
+                <h2 className="text-3xl font-black tracking-tight">Đơn hàng nhận được</h2>
+                <p className="text-gray-500 font-medium">Quản lý và xác nhận đơn hàng từ người mua</p>
               </div>
-              <button 
-                onClick={fetchOrders}
-                className="px-5 py-2.5 bg-white border border-[#E9ECEF] rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm"
-              >
-                <Clock className="w-4 h-4" />
-                Làm mới dữ liệu
+              <button onClick={fetchOrders}
+                className="px-5 py-2.5 bg-white border border-[#E9ECEF] rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
+                <Clock className="w-4 h-4" /> Làm mới
               </button>
             </div>
 
-            {/* Stats Card */}
+            {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-blue-600 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-blue-600/30 relative overflow-hidden">
                 <div className="relative z-10">
@@ -1048,17 +1014,13 @@ export default function App() {
                 </div>
                 <DollarSign className="absolute -right-6 -bottom-6 w-40 h-40 text-blue-500 opacity-20" />
               </div>
-              
               <div className="bg-white rounded-[2.5rem] p-10 border border-[#E9ECEF] shadow-sm flex flex-col justify-center">
                 <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Đơn hàng đã nhận</p>
                 <h3 className="text-5xl font-black text-gray-900">{orders.length}</h3>
               </div>
-
               <div className="bg-white rounded-[2.5rem] p-10 border border-[#E9ECEF] shadow-sm flex flex-col justify-center">
-                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Giá trị trung bình</p>
-                <h3 className="text-5xl font-black text-gray-900">
-                  {orders.length > 0 ? formatPrice(totalRevenue / orders.length) : '0đ'}
-                </h3>
+                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Chờ xác nhận</p>
+                <h3 className="text-5xl font-black text-yellow-600">{orders.filter(o => o.status === 'Chờ xác nhận').length}</h3>
               </div>
             </div>
 
@@ -1066,117 +1028,153 @@ export default function App() {
             <div className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm">
               <div className="px-8 py-6 border-b border-[#E9ECEF] bg-gray-50/30 flex justify-between items-center">
                 <h4 className="font-black text-lg">Lịch sử giao dịch</h4>
-                <div className="flex gap-2">
-                  <span className="px-3 py-1 bg-green-100 text-green-600 rounded-full text-[10px] font-black uppercase tracking-wider">Hoàn thành</span>
-                </div>
+                <span className="text-xs text-gray-400 font-bold">* Người mua sẽ nhận thông báo khi bạn xác nhận</span>
               </div>
-              
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[#E9ECEF] bg-gray-50/10">
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Mã đơn hàng</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Mã đơn</th>
                       <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Thời gian</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Chi tiết món</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-right">Thành tiền</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Chi tiết</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-right">Trạng thái & Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E9ECEF]">
                     {reportsLoading ? (
-                      <tr>
-                        <td colSpan={4} className="px-8 py-20 text-center text-gray-400">
-                          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-600" />
-                          <p className="font-bold">Đang tải dữ liệu báo cáo...</p>
-                        </td>
-                      </tr>
+                      <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-600" />
+                        <p className="font-bold">Đang tải đơn hàng...</p>
+                      </td></tr>
                     ) : orders.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-8 py-20 text-center text-gray-400">
-                          <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Clock className="w-8 h-8 opacity-20" />
-                          </div>
-                          <p className="font-bold text-gray-900">Chưa có đơn hàng nào</p>
-                          <p className="text-sm">Các đơn hàng khách đặt sẽ xuất hiện tại đây</p>
-                        </td>
-                      </tr>
+                      <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">
+                        <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Clock className="w-8 h-8 opacity-20" /></div>
+                        <p className="font-bold text-gray-900">Chưa có đơn hàng nào</p>
+                        <p className="text-sm">Các đơn hàng khách đặt sẽ xuất hiện tại đây</p>
+                      </td></tr>
                     ) : (
-                      (orders || []).map((order) => (
-                        <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
-                          <td className="px-8 py-6">
-                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8) || 'N/A'}</span>
-                          </td>
-                          <td className="px-8 py-6">
-                            <p className="text-sm font-bold text-gray-900">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
-                            <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleTimeString('vi-VN')}</p>
-                          </td>
-                          <td className="px-8 py-6">
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
-                                <span key={idx} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">
-                                  {item.name} x{item.quantity}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                order.status === 'Hoàn thành' ? 'bg-green-100 text-green-600' :
-                                order.status === 'Chờ xác nhận' ? 'bg-orange-100 text-orange-600' :
-                                'bg-blue-100 text-blue-600'
-                              }`}>
-                                {order.status || 'Chờ xác nhận'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-8 py-6">
-                            <div className="flex flex-col gap-2">
-                              <p className="text-sm font-black text-right text-blue-600 mb-2">
-                                {formatPrice(order.total_price)}
-                              </p>
-                              <div className="flex justify-end gap-1">
-                                {order.status === 'Chờ xác nhận' && (
-                                  <button 
-                                    onClick={() => updateOrderStatus(order.id, 'Đang chuẩn bị')}
-                                    className="text-[10px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
-                                  >
-                                    Xác nhận
-                                  </button>
-                                )}
-                                {order.status === 'Đang chuẩn bị' && (
-                                  <button 
-                                    onClick={() => updateOrderStatus(order.id, 'Đang giao')}
-                                    className="text-[10px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
-                                  >
-                                    Giao hàng
-                                  </button>
-                                )}
-                                {order.status === 'Đang giao' && (
-                                  <button 
-                                    onClick={() => updateOrderStatus(order.id, 'Hoàn thành')}
-                                    className="text-[10px] font-black bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors"
-                                  >
-                                    Hoàn thành
+                      (orders || []).map((order) => {
+                        const cfg = statusConfig[order.status] || { color: 'bg-gray-100 text-gray-600', label: order.status };
+                        return (
+                          <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
+                            <td className="px-8 py-6">
+                              <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8) || 'N/A'}</span>
+                            </td>
+                            <td className="px-8 py-6">
+                              <p className="text-sm font-bold text-gray-900">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
+                              <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleTimeString('vi-VN')}</p>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
+                                  <span key={idx} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{item.name} x{item.quantity}</span>
+                                ))}
+                              </div>
+                              <p className="text-sm font-black text-blue-600">{formatPrice(order.total_price)}</p>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex flex-col items-end gap-2">
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${cfg.color}`}>{cfg.label}</span>
+                                {cfg.next && (
+                                  <button onClick={() => updateOrderStatus(order, cfg.next!)}
+                                    className={`text-[10px] font-black text-white px-4 py-2 rounded-xl transition-colors ${cfg.nextColor}`}>
+                                    {cfg.nextLabel}
+                                    {cfg.next === 'Đã xác nhận' && <span className="ml-1">→ Gửi thông báo</span>}
                                   </button>
                                 )}
                               </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
           </motion.main>
+
+        /* ===== BUYER: My Purchases ===== */
+        ) : activeTab === 'my-purchases' ? (
+          <motion.main key="my-purchases" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="max-w-7xl mx-auto p-6 space-y-8">
+            <div className="flex justify-between items-end">
+              <div>
+                <h2 className="text-3xl font-black tracking-tight">Đơn hàng của tôi</h2>
+                <p className="text-gray-500 font-medium">Theo dõi trạng thái các đơn hàng bạn đã đặt</p>
+              </div>
+              <button onClick={fetchBuyerOrders}
+                className="px-5 py-2.5 bg-white border border-[#E9ECEF] rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
+                <Clock className="w-4 h-4" /> Làm mới
+              </button>
+            </div>
+
+            {reportsLoading ? (
+              <div className="h-64 flex flex-col items-center justify-center gap-3 text-gray-400">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <p className="font-medium">Đang tải đơn hàng...</p>
+              </div>
+            ) : myBuyerOrders.length === 0 ? (
+              <div className="h-96 flex flex-col items-center justify-center bg-white rounded-[2rem] border border-[#E9ECEF] gap-4 text-gray-400">
+                <div className="bg-gray-50 p-8 rounded-full"><ShoppingBag className="w-16 h-16 opacity-10" /></div>
+                <p className="text-xl font-bold text-gray-900">Chưa có đơn hàng nào</p>
+                <p className="text-sm font-medium">Hãy khám phá chợ chung và đặt hàng ngay!</p>
+                <button onClick={() => setActiveTab('marketplace')} className="mt-2 text-blue-600 font-bold hover:underline">Đi mua sắm →</button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myBuyerOrders.map(order => {
+                  const cfg = statusConfig[order.status] || { color: 'bg-gray-100 text-gray-600', label: order.status };
+                  return (
+                    <motion.div key={order.id} layout
+                      className="bg-white rounded-[2rem] border border-[#E9ECEF] p-8 shadow-sm">
+                      <div className="flex justify-between items-start flex-wrap gap-4">
+                        <div>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8)}</span>
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${cfg.color}`}>{cfg.label}</span>
+                          </div>
+                          <p className="text-sm text-gray-400">{new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                        </div>
+                        <p className="text-2xl font-black text-blue-600">{formatPrice(order.total_price)}</p>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
+                          <span key={idx} className="text-sm font-bold bg-[#F8F9FA] border border-[#E9ECEF] text-gray-700 px-4 py-2 rounded-2xl">
+                            {item.name} <span className="text-gray-400">x{item.quantity}</span>
+                          </span>
+                        ))}
+                      </div>
+                      {/* Status progress */}
+                      <div className="mt-6 flex items-center gap-2">
+                        {['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'].map((step, idx) => {
+                          const steps = ['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'];
+                          const currentIdx = steps.indexOf(order.status);
+                          const isDone = idx <= currentIdx;
+                          return (
+                            <React.Fragment key={step}>
+                              <div className={`flex flex-col items-center gap-1`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${isDone ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                  {isDone ? <Check className="w-4 h-4" /> : idx + 1}
+                                </div>
+                                <span className={`text-[9px] font-bold whitespace-nowrap ${isDone ? 'text-blue-600' : 'text-gray-400'}`}>{step}</span>
+                              </div>
+                              {idx < 3 && <div className={`flex-1 h-0.5 ${idx < currentIdx ? 'bg-blue-600' : 'bg-gray-200'} mb-4`} />}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.main>
+
+        /* ===== BUYER: Marketplace ===== */
         ) : (
-          <motion.main
-            key="marketplace"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="flex h-[calc(100vh-80px)]"
-          >
-            {/* Left Side: Marketplace Feed (Full width for better UX) */}
+          <motion.main key="marketplace" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="flex h-[calc(100vh-80px)]">
             <section className="w-full p-8 overflow-y-auto">
               <div className="max-w-4xl mx-auto space-y-10">
                 <div className="flex flex-col gap-6">
@@ -1191,26 +1189,18 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  
                   <div className="relative">
                     <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Tìm kiếm sản phẩm, người bán..."
-                      className="w-full bg-white border border-[#E9ECEF] rounded-[2rem] py-5 pl-14 pr-6 focus:outline-none focus:ring-4 focus:ring-blue-600/5 transition-all font-medium shadow-sm"
-                    />
+                    <input type="text" placeholder="Tìm kiếm sản phẩm, người bán..."
+                      className="w-full bg-white border border-[#E9ECEF] rounded-[2rem] py-5 pl-14 pr-6 focus:outline-none focus:ring-4 focus:ring-blue-600/5 transition-all font-medium shadow-sm" />
                   </div>
                 </div>
 
-                {/* Categories Scroll */}
+                {/* Categories */}
                 <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
                   {['Tất cả', 'Thực phẩm', 'Đồ uống', 'Thời trang', 'Điện tử', 'Gia dụng'].map((cat) => (
-                    <button 
-                      key={cat}
-                      className={`px-6 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all ${
-                        cat === 'Tất cả' ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20' : 'bg-white border border-[#E9ECEF] text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
+                    <button key={cat}
+                      className={`px-6 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all ${cat === 'Tất cả' ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20' : 'bg-white border border-[#E9ECEF] text-gray-500 hover:border-gray-300'}`}>
                       {cat}
                     </button>
                   ))}
@@ -1229,32 +1219,17 @@ export default function App() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {(products || []).map((product) => (
-                      <motion.div
-                        key={product.id}
-                        whileHover={{ y: -8 }}
-                        className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/5 transition-all group"
-                      >
+                      <motion.div key={product.id} whileHover={{ y: -8 }}
+                        className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/5 transition-all group">
                         <div className="h-64 overflow-hidden relative">
                           {isVideo(product.image) ? (
-                            <video 
-                              src={product.image} 
-                              controls 
-                              className="w-full h-full object-cover"
-                            />
+                            <video src={product.image} controls className="w-full h-full object-cover" />
                           ) : (
-                            <img
-                              src={product.image || 'https://picsum.photos/seed/placeholder/400/300'}
-                              alt={product.name}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                              referrerPolicy="no-referrer"
-                            />
+                            <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
                           )}
-                          <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">
-                            {product.category}
-                          </div>
-                          <button className="absolute top-5 right-5 p-3 bg-white/90 backdrop-blur-sm rounded-2xl text-gray-400 hover:text-red-500 transition-colors">
-                            <Star className="w-5 h-5" />
-                          </button>
+                          <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">{product.category}</div>
+                          <button className="absolute top-5 right-5 p-3 bg-white/90 backdrop-blur-sm rounded-2xl text-gray-400 hover:text-red-500 transition-colors"><Star className="w-5 h-5" /></button>
                         </div>
                         <div className="p-8">
                           <div className="flex justify-between items-start mb-4">
@@ -1269,12 +1244,9 @@ export default function App() {
                               <p className="text-blue-600 font-black text-2xl">{formatPrice(product.price)}</p>
                             </div>
                           </div>
-                          <button
-                            onClick={() => addToCart(product)}
-                            className="w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 hover:shadow-blue-600/20"
-                          >
-                            <Plus className="w-6 h-6" />
-                            Thêm vào giỏ hàng
+                          <button onClick={() => addToCart(product)}
+                            className="w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 hover:shadow-blue-600/20">
+                            <Plus className="w-6 h-6" /> Thêm vào giỏ hàng
                           </button>
                         </div>
                       </motion.div>
@@ -1284,33 +1256,20 @@ export default function App() {
               </div>
             </section>
 
-            {/* Modern Cart Sidebar */}
+            {/* Cart Sidebar */}
             <AnimatePresence>
               {showCart && (
                 <div className="fixed inset-0 z-[60] flex justify-end">
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => setShowCart(false)}
-                    className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-                  />
-                  <motion.section 
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    onClick={() => setShowCart(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+                  <motion.section initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
                     transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl"
-                  >
+                    className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
                     <div className="p-8 border-b border-[#E9ECEF] flex justify-between items-center bg-white sticky top-0 z-10">
                       <h2 className="text-2xl font-black flex items-center gap-3">
-                        <ShoppingCart className="w-6 h-6 text-blue-600" />
-                        Giỏ hàng
+                        <ShoppingCart className="w-6 h-6 text-blue-600" /> Giỏ hàng
                       </h2>
-                      <button 
-                        onClick={() => setShowCart(false)}
-                        className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                      >
+                      <button onClick={() => setShowCart(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                         <Trash2 className="w-5 h-5 text-gray-400" />
                       </button>
                     </div>
@@ -1318,14 +1277,9 @@ export default function App() {
                     <div className="flex-1 overflow-y-auto p-8 space-y-6">
                       <AnimatePresence mode="popLayout">
                         {(cart || []).length === 0 ? (
-                          <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4"
-                          >
-                            <div className="bg-gray-50 p-10 rounded-[2.5rem]">
-                              <ShoppingBag className="w-16 h-16 opacity-10" />
-                            </div>
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                            className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4">
+                            <div className="bg-gray-50 p-10 rounded-[2.5rem]"><ShoppingBag className="w-16 h-16 opacity-10" /></div>
                             <div className="text-center">
                               <p className="text-lg font-bold text-gray-900">Giỏ hàng trống</p>
                               <p className="text-sm font-medium">Hãy chọn những món đồ bạn yêu thích</p>
@@ -1333,43 +1287,20 @@ export default function App() {
                           </motion.div>
                         ) : (
                           (cart || []).map((item) => (
-                            <motion.div
-                              key={item.id}
-                              layout
-                              initial={{ opacity: 0, x: 20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -20 }}
-                              className="flex items-center gap-5 p-5 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] relative group"
-                            >
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="w-20 h-20 rounded-2xl object-cover shadow-sm"
-                                referrerPolicy="no-referrer"
-                              />
+                            <motion.div key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                              className="flex items-center gap-5 p-5 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] relative group">
+                              <img src={item.image} alt={item.name} className="w-20 h-20 rounded-2xl object-cover shadow-sm" referrerPolicy="no-referrer" />
                               <div className="flex-1 min-w-0">
                                 <h4 className="font-black text-base truncate">{item.name}</h4>
                                 <p className="text-blue-600 font-black text-sm mb-2">{formatPrice(item.price)}</p>
                                 <div className="flex items-center gap-4 bg-white border border-[#E9ECEF] rounded-xl p-1 w-fit shadow-sm">
-                                  <button
-                                    onClick={() => updateQuantity(item.id, -1)}
-                                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
+                                  <button onClick={() => updateQuantity(item.id, -1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><Minus className="w-3 h-3" /></button>
                                   <span className="font-black text-sm min-w-[20px] text-center">{item.quantity}</span>
-                                  <button
-                                    onClick={() => updateQuantity(item.id, 1)}
-                                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
+                                  <button onClick={() => updateQuantity(item.id, 1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><Plus className="w-3 h-3" /></button>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => removeFromCart(item.id)}
-                                className="p-3 text-gray-300 hover:text-red-500 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
-                              >
+                              <button onClick={() => removeFromCart(item.id)}
+                                className="p-3 text-gray-300 hover:text-red-500 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100">
                                 <Trash2 className="w-5 h-5" />
                               </button>
                             </motion.div>
@@ -1381,30 +1312,20 @@ export default function App() {
                     <div className="p-8 bg-[#F8F9FA] border-t border-[#E9ECEF] space-y-6">
                       <div className="space-y-3">
                         <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                          <span>Tạm tính</span>
-                          <span>{formatPrice(total)}</span>
+                          <span>Tạm tính</span><span>{formatPrice(total)}</span>
                         </div>
                         <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                          <span>Phí vận chuyển</span>
-                          <span className="text-green-500">Miễn phí</span>
+                          <span>Phí vận chuyển</span><span className="text-green-500">Miễn phí</span>
                         </div>
                         <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
                           <span className="font-black text-lg">Tổng cộng</span>
                           <span className="font-black text-blue-600 text-3xl">{formatPrice(total)}</span>
                         </div>
                       </div>
-                      
-                      <button
-                        onClick={handleCheckout}
-                        disabled={cart.length === 0 || loading}
-                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]"
-                      >
-                        {loading ? (
-                          <Loader2 className="w-6 h-6 animate-spin" />
-                        ) : (
-                          <ChevronRight className="w-6 h-6" />
-                        )}
-                        {loading ? 'Đang xử lý...' : 'Gửi đơn hàng ngay'}
+                      <button onClick={handleCheckout} disabled={cart.length === 0 || loading}
+                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
+                        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <ChevronRight className="w-6 h-6" />}
+                        {loading ? 'Đang xử lý...' : 'Đặt hàng ngay'}
                       </button>
                     </div>
                   </motion.section>
