@@ -7,12 +7,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-// The error "Cannot set property fetch of #<Window>" often occurs when Supabase
-// tries to polyfill fetch in environments where window.fetch is read-only.
-// We provide the native fetch explicitly to prevent this.
 export const supabase = createClient(
-  supabaseUrl, 
-  supabaseAnonKey, 
+  supabaseUrl,
+  supabaseAnonKey,
   {
     global: {
       fetch: (input, init) => window.fetch(input, init),
