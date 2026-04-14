@@ -4,12 +4,13 @@ import {
   Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign, 
   LogIn, UserPlus, LogOut, Mail, Lock, Store, User, PackagePlus, 
   ShoppingBag, Search, Filter, ChevronRight, Star, Edit,
-  Bell, BellRing, CheckCircle2, XCircle, Package, Truck, Check, X
+  Bell, BellRing, CheckCircle2, XCircle, Package, Truck, Check, X, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
+// ===================== INTERFACES =====================
 interface Product {
   id: number;
   name: string;
@@ -47,6 +48,13 @@ interface Toast {
   id: number;
   message: string;
   type: 'success' | 'error';
+}
+
+interface ProductPreference {
+  user_id: string;
+  product_id: number;
+  is_priority: boolean;
+  is_excluded: boolean;
 }
 
 // ===================== AUTH FORM =====================
@@ -357,6 +365,10 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // Buyer preferences state
+  const [preferences, setPreferences] = useState<ProductPreference[]>([]);
+  const [showExcluded, setShowExcluded] = useState(false);
+
   // Seller specific state
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -424,6 +436,13 @@ export default function App() {
     fetchProducts();
   }, [session, activeTab]);
 
+  // ---- Fetch preferences for buyer ----
+  useEffect(() => {
+    if (role === 'buyer' && session?.user?.id) {
+      fetchPreferences();
+    }
+  }, [role, session]);
+
   // ---- Fetch orders for seller ----
   useEffect(() => {
     if (activeTab === 'my-orders' && role === 'seller') fetchOrders();
@@ -439,7 +458,6 @@ export default function App() {
     if (!session?.user?.id) return;
     fetchNotifications();
     
-    // Realtime subscription for notifications
     const channel = supabase
       .channel('notifications-channel')
       .on('postgres_changes', {
@@ -496,6 +514,15 @@ export default function App() {
     }
   }
 
+  async function fetchPreferences() {
+    if (!session?.user?.id) return;
+    const { data } = await supabase
+      .from('product_preferences')
+      .select('*')
+      .eq('user_id', session.user.id);
+    setPreferences(data || []);
+  }
+
   async function fetchOrders() {
     const userId = session?.user?.id;
     if (!userId) return;
@@ -535,6 +562,62 @@ export default function App() {
       .from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
     setNotifications(data || []);
   }
+
+  // ---- Buyer Preference Logic ----
+  const togglePreference = async (productId: number, field: 'is_priority' | 'is_excluded') => {
+    if (!session?.user?.id) return;
+
+    const currentPref = preferences.find(p => p.product_id === productId);
+    const newValue = !currentPref?.[field];
+
+    // Optimistic Update
+    setPreferences(prev => {
+      const exists = prev.find(p => p.product_id === productId);
+      if (exists) {
+        return prev.map(p => p.product_id === productId ? { ...p, [field]: newValue } : p);
+      }
+      return [...prev, { 
+        user_id: session!.user.id, 
+        product_id: productId, 
+        is_priority: field === 'is_priority' ? newValue : false, 
+        is_excluded: field === 'is_excluded' ? newValue : false 
+      }];
+    });
+
+    try {
+      const { error } = await supabase
+        .from('product_preferences')
+        .upsert({ 
+          user_id: session.user.id, 
+          product_id: productId, 
+          [field]: newValue,
+          is_priority: currentPref ? currentPref.is_priority : (field === 'is_priority' ? newValue : false),
+          is_excluded: currentPref ? currentPref.is_excluded : (field === 'is_excluded' ? newValue : false),
+        });
+      if (error) throw error;
+      showToast(newValue ? 'Đã cập nhật' : 'Đã hủy chọn', 'success');
+    } catch (err: any) {
+      showToast('Lỗi cập nhật: ' + err.message, 'error');
+      fetchPreferences(); // Rollback
+    }
+  };
+
+  // Process products: Filter excluded and sort priority
+  const processedProducts = useMemo(() => {
+    if (!products) return [];
+    
+    let filtered = products.filter(p => {
+      const pref = preferences.find(pref => pref.product_id === p.id);
+      if (showExcluded) return pref?.is_excluded; // Mode xem SP đã loại bỏ
+      return !pref?.is_excluded; // Ẩn SP bị loại bỏ
+    });
+
+    return filtered.sort((a, b) => {
+      const prefA = preferences.find(p => p.product_id === a.id)?.is_priority;
+      const prefB = preferences.find(p => p.product_id === b.id)?.is_priority;
+      return (prefB ? 1 : 0) - (prefA ? 1 : 0);
+    });
+  }, [products, preferences, showExcluded]);
 
   // ---- Add/Edit Product ----
   const handleAddProduct = async (e: React.FormEvent) => {
@@ -636,7 +719,6 @@ export default function App() {
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const totalRevenue = useMemo(() => orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0), [orders]);
 
-  // ---- Checkout: người mua đặt hàng ----
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     const buyerId = session?.user?.id;
@@ -656,7 +738,6 @@ export default function App() {
         .from('orders').insert([orderData]).select().single();
       if (checkoutError) throw checkoutError;
 
-      // Tạo thông báo cho NGƯỜI BÁN
       await supabase.from('notifications').insert([{
         user_id: cart[0].seller_id,
         order_id: newOrder.id,
@@ -675,7 +756,6 @@ export default function App() {
     }
   };
 
-  // ---- Update order status (người bán) + gửi thông báo người mua ----
   const updateOrderStatus = async (order: Order, newStatus: string) => {
     try {
       setReportsLoading(true);
@@ -683,7 +763,6 @@ export default function App() {
         .from('orders').update({ status: newStatus }).eq('id', order.id);
       if (updateError) throw updateError;
 
-      // Tạo thông báo cho NGƯỜI MUA
       let message = '';
       let type: Notification['type'] = 'order_confirmed';
       if (newStatus === 'Đã xác nhận') {
@@ -730,7 +809,6 @@ export default function App() {
     'Hoàn thành':   { color: 'bg-purple-100 text-purple-700', label: 'Hoàn thành' },
   };
 
-  // ===== Safety checks =====
   if (!supabaseUrl || !supabaseKey) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center">
@@ -771,11 +849,9 @@ export default function App() {
     }} />;
   }
 
-  // ===== MAIN RENDER =====
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
 
-      {/* ── Toast Notifications ── */}
       <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3">
         <AnimatePresence>
           {toasts.map(toast => (
@@ -790,7 +866,6 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* ── Navbar ── */}
       <nav className="bg-white border-b border-[#E9ECEF] px-6 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center h-20">
           <div className="flex items-center gap-10">
@@ -827,7 +902,6 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {/* Cart button (buyer only) */}
             {role === 'buyer' && (
               <button onClick={() => setShowCart(true)}
                 className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
@@ -839,7 +913,6 @@ export default function App() {
                 )}
               </button>
             )}
-            {/* Notification bell */}
             <button onClick={() => setShowNotifications(true)}
               className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
               <Bell className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
@@ -863,7 +936,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── Notification Panel ── */}
       <AnimatePresence>
         {showNotifications && (
           <NotificationPanel
@@ -875,10 +947,8 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* ── PAGES ── */}
       <AnimatePresence mode="wait">
 
-        {/* ===== SELLER: My Products ===== */}
         {activeTab === 'my-products' ? (
           <motion.main key="my-products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="max-w-7xl mx-auto p-6 space-y-8">
@@ -935,7 +1005,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Add Product Modal */}
             <AnimatePresence>
               {showAddProduct && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
@@ -990,7 +1059,6 @@ export default function App() {
             </AnimatePresence>
           </motion.main>
 
-        /* ===== SELLER: My Orders ===== */
         ) : activeTab === 'my-orders' ? (
           <motion.main key="my-orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="max-w-7xl mx-auto p-6 space-y-8">
@@ -1005,7 +1073,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-blue-600 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-blue-600/30 relative overflow-hidden">
                 <div className="relative z-10">
@@ -1024,7 +1091,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Orders Table */}
             <div className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm">
               <div className="px-8 py-6 border-b border-[#E9ECEF] bg-gray-50/30 flex justify-between items-center">
                 <h4 className="font-black text-lg">Lịch sử giao dịch</h4>
@@ -1094,7 +1160,6 @@ export default function App() {
             </div>
           </motion.main>
 
-        /* ===== BUYER: My Purchases ===== */
         ) : activeTab === 'my-purchases' ? (
           <motion.main key="my-purchases" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="max-w-7xl mx-auto p-6 space-y-8">
@@ -1145,7 +1210,6 @@ export default function App() {
                           </span>
                         ))}
                       </div>
-                      {/* Status progress */}
                       <div className="mt-6 flex items-center gap-2">
                         {['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'].map((step, idx) => {
                           const steps = ['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'];
@@ -1171,7 +1235,6 @@ export default function App() {
             )}
           </motion.main>
 
-        /* ===== BUYER: Marketplace ===== */
         ) : (
           <motion.main key="marketplace" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="flex h-[calc(100vh-80px)]">
@@ -1180,10 +1243,21 @@ export default function App() {
                 <div className="flex flex-col gap-6">
                   <div className="flex justify-between items-end">
                     <div>
-                      <h2 className="text-4xl font-black tracking-tight mb-2">Khám phá Chợ chung</h2>
-                      <p className="text-gray-500 font-medium">Tìm kiếm những sản phẩm tốt nhất từ cộng đồng người bán</p>
+                      <h2 className="text-4xl font-black tracking-tight mb-2">
+                        {showExcluded ? 'Sản phẩm đã loại bỏ' : 'Khám phá Chợ chung'}
+                      </h2>
+                      <p className="text-gray-500 font-medium">
+                        {showExcluded ? 'Quản lý các sản phẩm bạn đã ẩn' : 'Tìm kiếm những sản phẩm tốt nhất từ cộng đồng'}
+                      </p>
                     </div>
                     <div className="flex gap-3">
+                      <button 
+                        onClick={() => setShowExcluded(!showExcluded)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${showExcluded ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        {showExcluded ? 'Quay lại Chợ chung' : 'Xem SP đã loại bỏ'}
+                      </button>
                       <button className="p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm">
                         <Filter className="w-5 h-5 text-gray-400" />
                       </button>
@@ -1196,7 +1270,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Categories */}
                 <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
                   {['Tất cả', 'Thực phẩm', 'Đồ uống', 'Thời trang', 'Điện tử', 'Gia dụng'].map((cat) => (
                     <button key={cat}
@@ -1211,52 +1284,74 @@ export default function App() {
                     <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
                     <p className="font-bold">Đang tìm kiếm sản phẩm...</p>
                   </div>
-                ) : (products || []).length === 0 ? (
+                ) : processedProducts.length === 0 ? (
                   <div className="h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[3rem] border border-[#E9ECEF]">
                     <Search className="w-16 h-16 opacity-10" />
                     <p className="text-xl font-bold text-gray-900">Không tìm thấy sản phẩm nào</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {(products || []).map((product) => (
-                      <motion.div key={product.id} whileHover={{ y: -8 }}
-                        className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/5 transition-all group">
-                        <div className="h-64 overflow-hidden relative">
-                          {isVideo(product.image) ? (
-                            <video src={product.image} controls className="w-full h-full object-cover" />
-                          ) : (
-                            <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
-                          )}
-                          <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">{product.category}</div>
-                          <button className="absolute top-5 right-5 p-3 bg-white/90 backdrop-blur-sm rounded-2xl text-gray-400 hover:text-red-500 transition-colors"><Star className="w-5 h-5" /></button>
-                        </div>
-                        <div className="p-8">
-                          <div className="flex justify-between items-start mb-4">
-                            <div>
-                              <h3 className="font-black text-2xl mb-1 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-                              <div className="flex items-center gap-2 text-gray-400">
-                                <Store className="w-3 h-3" />
-                                <span className="text-xs font-bold uppercase tracking-wider">Seller ID: {product?.seller_id?.slice(0, 8) || 'Unknown'}...</span>
-                              </div>
+                    {processedProducts.map((product) => {
+                      const pref = preferences.find(p => p.product_id === product.id);
+                      return (
+                        <motion.div key={product.id} whileHover={{ y: -8 }}
+                          className={`bg-white rounded-[2.5rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all group ${pref?.is_priority ? 'border-yellow-400 ring-2 ring-yellow-400/20' : 'border-[#E9ECEF]'}`}>
+                          <div className="h-64 overflow-hidden relative">
+                            {isVideo(product.image) ? (
+                              <video src={product.image} controls className="w-full h-full object-cover" />
+                            ) : (
+                              <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+                            )}
+                            
+                            {/* Priority and Exclusion Controls */}
+                            <div className="absolute top-5 right-5 flex flex-col gap-2">
+                              <button 
+                                onClick={() => togglePreference(product.id, 'is_priority')}
+                                className={`p-3 rounded-2xl transition-all shadow-lg ${pref?.is_priority ? 'bg-yellow-400 text-white scale-110' : 'bg-white/90 text-gray-400 hover:text-yellow-500'}`}
+                                title="Ưu tiên sản phẩm này"
+                              >
+                                <Star className={`w-5 h-5 ${pref?.is_priority ? 'fill-current' : ''}`} />
+                              </button>
+                              <button 
+                                onClick={() => togglePreference(product.id, 'is_excluded')}
+                                className={`p-3 rounded-2xl transition-all shadow-lg ${pref?.is_excluded ? 'bg-red-500 text-white scale-110' : 'bg-white/90 text-gray-400 hover:text-red-500'}`}
+                                title="Loại bỏ khỏi danh sách"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
                             </div>
-                            <div className="text-right">
-                              <p className="text-blue-600 font-black text-2xl">{formatPrice(product.price)}</p>
+
+                            <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">
+                              {product.category} {pref?.is_priority && '⭐'}
                             </div>
                           </div>
-                          <button onClick={() => addToCart(product)}
-                            className="w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 hover:shadow-blue-600/20">
-                            <Plus className="w-6 h-6" /> Thêm vào giỏ hàng
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
+                          <div className="p-8">
+                            <div className="flex justify-between items-start mb-4">
+                              <div>
+                                <h3 className="font-black text-2xl mb-1 group-hover:text-blue-600 transition-colors">{product.name}</h3>
+                                <div className="flex items-center gap-2 text-gray-400">
+                                  <Store className="w-3 h-3" />
+                                  <span className="text-xs font-bold uppercase tracking-wider">Seller ID: {product?.seller_id?.slice(0, 8) || 'Unknown'}...</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-blue-600 font-black text-2xl">{formatPrice(product.price)}</p>
+                              </div>
+                            </div>
+                            <button onClick={() => addToCart(product)}
+                              className="w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 hover:shadow-blue-600/20">
+                              <Plus className="w-6 h-6" /> Thêm vào giỏ hàng
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </section>
 
-            {/* Cart Sidebar */}
             <AnimatePresence>
               {showCart && (
                 <div className="fixed inset-0 z-[60] flex justify-end">
