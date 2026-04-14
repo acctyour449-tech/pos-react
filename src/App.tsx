@@ -147,14 +147,12 @@ function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView, onH
   onHide: (id: number) => void; hidden: boolean;
 }) {
   const discount = product.original_price ? Math.round((1 - product.price / product.original_price) * 100) : 0;
-  
-  if (hidden) return null; // Sẽ được handle ở level filter nhưng thêm ở đây cho chắc chắn
+  if (hidden) return null;
 
   return (
     <motion.div whileHover={{ y: -6 }} className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/8 transition-all group cursor-pointer relative"
       onClick={() => onView(product)}>
       
-      {/* Hide Button (Only for Buyer) */}
       <button onClick={e => { e.stopPropagation(); onHide(product.id); }}
         className="absolute top-3 right-3 z-20 p-2 rounded-full bg-white/80 backdrop-blur-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 shadow-sm">
         <EyeOff className="w-4 h-4" />
@@ -203,7 +201,6 @@ function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView, onH
   );
 }
 
-// ─────────── SKELETON LOADER ───────────
 function ProductSkeleton() {
   return (
     <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm animate-pulse">
@@ -220,7 +217,6 @@ function ProductSkeleton() {
   );
 }
 
-// (Các component ProductDetailModal, AuthForm, RoleSelection, NotificationPanel giữ nguyên logic cơ bản nhưng được tối ưu performance)
 function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishlist }: {
   product: Product; onClose: () => void;
   onAddToCart: (p: Product, qty: number, note: string) => void;
@@ -520,15 +516,9 @@ export default function App() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
   };
 
-  // Filtered products with "Hidden" logic
   const filteredProducts = useMemo(() => {
     let list = [...(role === 'seller' && activeTab === 'my-products' ? products : allProducts)];
-    
-    // Filter out hidden products for buyers
-    if (role === 'buyer') {
-      list = list.filter(p => !hiddenProducts.includes(p.id));
-    }
-
+    if (role === 'buyer') list = list.filter(p => !hiddenProducts.includes(p.id));
     if (searchQuery) list = list.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()) || p.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
     if (selectedCategory !== 'all') {
       const catLabel = CATEGORIES.find(c => c.id === selectedCategory)?.label;
@@ -536,7 +526,6 @@ export default function App() {
     }
     if (selectedSubcat) list = list.filter(p => p.subcategory === selectedSubcat);
     list = list.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
-    
     switch (sortBy) {
       case 'price_asc': list.sort((a, b) => a.price - b.price); break;
       case 'price_desc': list.sort((a, b) => b.price - a.price); break;
@@ -547,7 +536,6 @@ export default function App() {
     return list;
   }, [allProducts, products, searchQuery, selectedCategory, selectedSubcat, sortBy, priceRange, role, activeTab, hiddenProducts]);
 
-  // ─── Auth & Setup ───
   useEffect(() => {
     const init = async () => {
       try {
@@ -565,7 +553,6 @@ export default function App() {
     else if (role === 'buyer') setActiveTab('marketplace');
   }, [role]);
 
-  // ─── Fetch Data ───
   useEffect(() => { if (session) { fetchAllProducts(); fetchHiddenProducts(); } }, [session]);
   useEffect(() => { if (session && role === 'seller') fetchMyProducts(); }, [session, role, activeTab]);
   useEffect(() => { if (activeTab === 'my-orders' && role === 'seller') fetchOrders(); }, [activeTab, role]);
@@ -623,7 +610,6 @@ export default function App() {
     return () => { supabase.removeChannel(ch); };
   }
 
-  // ─── Product CRUD ───
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -690,7 +676,6 @@ export default function App() {
     } catch (err: any) { showToast(err.message, 'error'); } finally { setActionLoading(null); }
   };
 
-  // ─── Favorites & Hide Logic ───
   const handleHideProduct = async (id: number) => {
     try {
       const { error } = await supabase.from('hidden_products').insert([{ user_id: session!.user.id, product_id: id }]);
@@ -700,7 +685,6 @@ export default function App() {
     } catch (err: any) { showToast('Không thể ẩn sản phẩm', 'error'); }
   };
 
-  // ─── Cart ───
   const addToCart = (product: Product, qty = 1, note = '') => {
     setCart(prev => {
       if (prev.length > 0 && prev[0].seller_id !== product.seller_id) {
@@ -725,7 +709,6 @@ export default function App() {
 
   const finalTotal = cartTotal * (1 - discount);
 
-  // ─── Checkout ───
   const handleCheckout = async () => {
     if (!cart.length || !session?.user?.id) return;
     try {
@@ -750,7 +733,6 @@ export default function App() {
     } catch (err: any) { showToast(err.message, 'error'); } finally { setLoading(false); }
   };
 
-  // ─── Order Status (Seller) ───
   const updateOrderStatus = async (order: Order, newStatus: string) => {
     try {
       setActionLoading('updating-order-' + order.id);
@@ -802,7 +784,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] font-sans text-gray-900">
-      {/* ── Toasts ── */}
       <div className="fixed top-6 right-6 z-[150] flex flex-col gap-3 pointer-events-none">
         <AnimatePresence>
           {toasts.map(t => (
@@ -823,7 +804,6 @@ export default function App() {
         {viewProduct && <ProductDetailModal product={viewProduct} onClose={() => setViewProduct(null)} onAddToCart={(p, qty, note) => addToCart(p, qty, note)} wishlisted={wishlist.includes(viewProduct.id)} onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])} />}
       </AnimatePresence>
 
-      {/* ══════════════════════════════ NAVBAR ══════════════════════════════ */}
       <nav className="bg-white/95 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-6">
           <div className="flex items-center gap-8">
@@ -891,10 +871,7 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ══════════════════════════════════════════════════════════════════ */}
       <AnimatePresence mode="wait">
-
-        {/* ██████████████████  SELLER: MY PRODUCTS  ██████████████████ */}
         {activeTab === 'my-products' && (
           <motion.main key="my-products" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -907,7 +884,6 @@ export default function App() {
                 <PackagePlus className="w-4 h-4" /> Thêm sản phẩm
               </button>
             </div>
-
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -919,7 +895,6 @@ export default function App() {
                 <button onClick={() => setViewMode('list')} className={`p-2.5 rounded-xl border transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><List className="w-4 h-4" /></button>
               </div>
             </div>
-
             {loading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[...Array(10)].map((_, i) => <ProductSkeleton key={i} />)}
@@ -1075,7 +1050,6 @@ export default function App() {
           </motion.main>
         )}
 
-        {/* ████████████████████  SELLER: ORDERS  █████████████████████ */}
         {activeTab === 'my-orders' && (
           <motion.main key="my-orders" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1087,7 +1061,6 @@ export default function App() {
                 <RefreshCw className="w-4 h-4" /> Làm mới
               </button>
             </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Tổng doanh thu', value: formatPrice(totalRevenue), icon: DollarSign, color: 'bg-blue-600', textColor: 'text-white' },
@@ -1102,7 +1075,6 @@ export default function App() {
                 </div>
               ))}
             </div>
-
             {ordersLoading ? (
               <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /><span className="text-gray-500 font-medium">Đang tải...</span></div>
             ) : orders.length === 0 ? (
@@ -1161,7 +1133,6 @@ export default function App() {
           </motion.main>
         )}
 
-        {/* ████████████████  BUYER: MARKETPLACE  ████████████████ */}
         {activeTab === 'marketplace' && (
           <motion.main key="marketplace" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
             <div className="relative">
@@ -1174,7 +1145,6 @@ export default function App() {
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
             </div>
-
             <AnimatePresence>
               {showFilters && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1220,7 +1190,6 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
-
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
               {CATEGORIES.map(cat => (
                 <button key={cat.id} onClick={() => { setSelectedCategory(cat.id); setSelectedSubcat(''); }}
@@ -1229,7 +1198,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-
             <AnimatePresence>
               {selectedCategory !== 'all' && CATEGORIES.find(c => c.id === selectedCategory)?.sub.length && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1243,7 +1211,6 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
-
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-500 font-medium">
                 {loading ? 'Đang tải...' : `${filteredProducts.length} sản phẩm`}
@@ -1254,7 +1221,6 @@ export default function App() {
                 <button onClick={() => setViewMode('list')} className={`p-2 rounded-xl border transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><List className="w-4 h-4" /></button>
               </div>
             </div>
-
             {loading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[...Array(10)].map((_, i) => <ProductSkeleton key={i} />)}
@@ -1304,7 +1270,6 @@ export default function App() {
           </motion.main>
         )}
 
-        {/* ████████████████  BUYER: MY PURCHASES  ████████████████ */}
         {activeTab === 'my-purchases' && (
           <motion.main key="my-purchases" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto p-6 space-y-6">
             <div className="flex items-center justify-between">
@@ -1316,7 +1281,6 @@ export default function App() {
                 <RefreshCw className="w-4 h-4" /> Làm mới
               </button>
             </div>
-
             {ordersLoading ? (
               <div className="flex items-center justify-center h-48 gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
             ) : buyerOrders.length === 0 ? (
@@ -1364,14 +1328,15 @@ export default function App() {
                                     </div>
                                     <span className={`text-[9px] font-black text-center whitespace-nowrap ${done ? 'text-blue-600' : 'text-gray-400'}`} style={{ maxWidth: '60px' }}>{step}</span>
                                   </div>
-{idx < PROGRESS_STEPS.length - 1 && (
+                                  {idx < PROGRESS_STEPS.length - 1 && (
                                     <div className={`flex-1 h-1 mx-1 rounded-full mb-5 transition-all ${idx < currentStep ? 'bg-blue-600' : 'bg-gray-100'}`} />
                                   )}
                                 </React.Fragment>
                               );
                             })}
                           </div>
-{/* ... Tiếp tục từ phần render buyerOrders ... */}
+                        </div>
+                      )}
                       {order.status === 'Đã hủy' && (
                         <div className="mx-6 mb-5 p-3 bg-red-50 rounded-2xl text-red-600 text-sm font-medium text-center border border-red-100">❌ Đơn hàng đã bị hủy</div>
                       )}
@@ -1383,7 +1348,6 @@ export default function App() {
           </motion.main>
         )}
 
-        {/* ████████████████  BUYER: WISHLIST  ████████████████ */}
         {activeTab === 'wishlist-tab' && (
           <motion.main key="wishlist-tab" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
             <div>
@@ -1418,7 +1382,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* ══════════════════════ CART SIDEBAR ══════════════════════ */}
       <AnimatePresence>
         {showCart && (
           <div className="fixed inset-0 z-[70] flex justify-end">
@@ -1427,8 +1390,6 @@ export default function App() {
             <motion.section initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
-
-              {/* Cart Header */}
               <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
                 <div className="flex items-center gap-3">
                   {checkoutStep !== 'cart' && (
@@ -1443,161 +1404,161 @@ export default function App() {
                 </div>
                 <button onClick={() => { setShowCart(false); setCheckoutStep('cart'); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
               </div>
-
-              {/* Steps indicator */}
               <div className="flex px-5 py-3 border-b border-gray-50 gap-1">
-                {['cart', 'address', 'payment', 'confirm'].map((step, idx) => (
-                  <div key={step} className={`flex-1 h-1 rounded-full transition-all ${['cart', 'address', 'payment', 'confirm'].indexOf(checkoutStep) >= idx ? 'bg-blue-600' : 'bg-gray-100'}`} />
-                ))}
-              </div>
-
-              {/* ── Step: Cart ── */}
-              {checkoutStep === 'cart' && (
-                <>
-                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                    <AnimatePresence>
-                      {cart.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center gap-4 py-20 text-gray-300">
-                          <ShoppingBag className="w-16 h-16" />
-                          <p className="font-bold text-gray-500">Giỏ hàng trống</p>
-                          <button onClick={() => { setShowCart(false); setActiveTab('marketplace'); }} className="text-blue-600 text-sm font-bold hover:underline">Khám phá sản phẩm →</button>
-                        </div>
-                      ) : cart.map(item => (
-                        <motion.div key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                          className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3 group">
-                          <div className="w-16 h-16 rounded-xl overflow-hidden bg-white border border-gray-100 flex-shrink-0">
-                            <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-sm truncate">{item.name}</p>
-                            <p className="text-blue-600 font-black text-sm">{formatPrice(item.price)}</p>
-                            {item.note && <p className="text-xs text-gray-400 italic truncate">"{item.note}"</p>}
-                            <div className="flex items-center gap-2 mt-2 bg-white border border-gray-200 rounded-xl p-1 w-fit">
-                              <button onClick={() => updateQty(item.id, -1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Minus className="w-3 h-3" /></button>
-                              <span className="font-black text-sm w-6 text-center">{item.quantity}</span>
-                              <button onClick={() => updateQty(item.id, 1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Plus className="w-3 h-3" /></button>
-                            </div>
-                          </div>
-                          <button onClick={() => removeFromCart(item.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-white rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                  {cart.length > 0 && (
-                    <div className="p-5 border-t border-gray-100 space-y-4 bg-white">
-                      <div className="flex gap-2">
-                        <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                          placeholder="Mã giảm giá (SALE10, WELCOME)"
-                          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20" />
-                        <button onClick={applyCoupon} className="px-4 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-colors"><Tag className="w-4 h-4" /></button>
-                      </div>
-                      {discount > 0 && <p className="text-emerald-600 text-sm font-bold text-center">✓ Đã áp dụng giảm {(discount * 100).toFixed(0)}% — Tiết kiệm {formatPrice(cartTotal * discount)}</p>}
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between text-gray-500"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
-                        {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
-                        <div className="flex justify-between font-black text-base pt-2 border-t border-gray-100"><span>Tổng cộng</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
-                      </div>
-                      <button onClick={() => setCheckoutStep('address')}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
-                        Tiếp tục đặt hàng <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* ── Step: Address ── */}
-              {checkoutStep === 'address' && (
-                <>
-                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                    <div className="space-y-2">
-                      <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Địa chỉ giao hàng *</label>
-                      <textarea value={shippingAddr} onChange={e => setShippingAddr(e.target.value)} rows={3} required
-                        placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Ghi chú cho đơn hàng</label>
-                      <textarea value={orderNote} onChange={e => setOrderNote(e.target.value)} rows={2}
-                        placeholder="Ghi chú cho người bán: thời gian giao, yêu cầu đặc biệt..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
-                    </div>
-                  </div>
-                  <div className="p-5 border-t border-gray-100">
-                    <button onClick={() => { if (!shippingAddr.trim()) { showToast('Vui lòng nhập địa chỉ giao hàng', 'error'); return; } setCheckoutStep('payment'); }}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
-                      Tiếp tục <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* ── Step: Payment ── */}
-              {checkoutStep === 'payment' && (
-                <>
-                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                    <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Phương thức thanh toán</p>
-                    {[
-                      { id: 'cod', icon: '💵', label: 'Tiền mặt khi nhận hàng (COD)', desc: 'Thanh toán khi shipper giao tới' },
-                      { id: 'bank', icon: '🏦', label: 'Chuyển khoản ngân hàng', desc: 'Chuyển khoản trước khi giao hàng' },
-                      { id: 'momo', icon: '📱', label: 'Ví MoMo', desc: 'Thanh toán qua ứng dụng MoMo' },
-                    ].map(({ id, icon, label, desc }) => (
-                      <button key={id} onClick={() => setPaymentMethod(id as any)}
-                        className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${paymentMethod === id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                        <span className="text-2xl">{icon}</span>
-                        <div className="flex-1">
-                          <p className={`font-bold text-sm ${paymentMethod === id ? 'text-blue-700' : 'text-gray-800'}`}>{label}</p>
-                          <p className="text-xs text-gray-400">{desc}</p>
-                        </div>
-                        {paymentMethod === id && <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />}
-                      </button>
+                {['cart', 'address', 'payment', 'confirm'].map((step,idx) => (
+                      <div key={step} className={`flex-1 h-1 rounded-full transition-all ${['cart', 'address', 'payment', 'confirm'].indexOf(checkoutStep) >= idx ? 'bg-blue-600' : 'bg-gray-100'}`} />
                     ))}
                   </div>
-                  <div className="p-5 border-t border-gray-100">
-                    <button onClick={() => setCheckoutStep('confirm')}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
-                      Xem lại đơn hàng <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </>
-              )}
 
-              {/* ── Step: Confirm ── */}
-              {checkoutStep === 'confirm' && (
-                <>
-                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                    <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
-                      <p className="font-black text-sm text-gray-700">📦 Sản phẩm</p>
-                      {cart.map(item => (
-                        <div key={item.id} className="flex justify-between items-center">
-                          <span className="text-sm text-gray-700">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
-                          <span className="text-sm font-bold text-blue-600">{formatPrice(item.price * item.quantity)}</span>
+                  {/* ── Step: Cart ── */}
+                  {checkoutStep === 'cart' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                        <AnimatePresence>
+                          {cart.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center gap-4 py-20 text-gray-300">
+                              <ShoppingBag className="w-16 h-16" />
+                              <p className="font-bold text-gray-500">Giỏ hàng trống</p>
+                              <button onClick={() => { setShowCart(false); setActiveTab('marketplace'); }} className="text-blue-600 text-sm font-bold hover:underline">Khám phá sản phẩm →</button>
+                            </div>
+                          ) : cart.map(item => (
+                            <motion.div key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                              className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3 group">
+                              <div className="w-16 h-16 rounded-xl overflow-hidden bg-white border border-gray-100 flex-shrink-0">
+                                <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm truncate">{item.name}</p>
+                                <p className="text-blue-600 font-black text-sm">{formatPrice(item.price)}</p>
+                                {item.note && <p className="text-xs text-gray-400 italic truncate">"{item.note}"</p>}
+                                <div className="flex items-center gap-2 mt-2 bg-white border border-gray-200 rounded-xl p-1 w-fit">
+                                  <button onClick={() => updateQty(item.id, -1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Minus className="w-3 h-3" /></button>
+                                  <span className="font-black text-sm w-6 text-center">{item.quantity}</span>
+                                  <button onClick={() => updateQty(item.id, 1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Plus className="w-3 h-3" /></button>
+                                </div>
+                              </div>
+                              <button onClick={() => removeFromCart(item.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-white rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </div>
+                      {cart.length > 0 && (
+                        <div className="p-5 border-t border-gray-100 space-y-4 bg-white">
+                          <div className="flex gap-2">
+                            <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                              placeholder="Mã giảm giá (SALE10, WELCOME)"
+                              className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20" />
+                            <button onClick={applyCoupon} className="px-4 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-colors"><Tag className="w-4 h-4" /></button>
+                          </div>
+                          {discount > 0 && <p className="text-emerald-600 text-sm font-bold text-center">✓ Đã áp dụng giảm {(discount * 100).toFixed(0)}% — Tiết kiệm {formatPrice(cartTotal * discount)}</p>}
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between text-gray-500"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
+                            {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
+                            <div className="flex justify-between font-black text-base pt-2 border-t border-gray-100"><span>Tổng cộng</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
+                          </div>
+                          <button onClick={() => setCheckoutStep('address')}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
+                            Tiếp tục đặt hàng <ChevronRight className="w-5 h-5" />
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                    <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
-                      <p className="font-black text-sm text-gray-700 mb-3">📋 Thông tin đơn hàng</p>
-                      <div className="text-sm space-y-2">
-                        <div className="flex gap-2"><MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600">{shippingAddr}</span></div>
-                        <div className="flex gap-2"><span className="text-lg leading-none">💳</span><span className="text-gray-600">{paymentMethod === 'cod' ? 'COD - Tiền mặt khi nhận' : paymentMethod === 'bank' ? 'Chuyển khoản ngân hàng' : 'Ví MoMo'}</span></div>
-                        {orderNote && <div className="flex gap-2"><MessageCircle className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600 italic">{orderNote}</span></div>}
+                      )}
+                    </>
+                  )}
+
+                  {/* ── Step: Address ── */}
+                  {checkoutStep === 'address' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Địa chỉ giao hàng *</label>
+                          <textarea value={shippingAddr} onChange={e => setShippingAddr(e.target.value)} rows={3} required
+                            placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành..."
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Ghi chú cho đơn hàng</label>
+                          <textarea value={orderNote} onChange={e => setOrderNote(e.target.value)} rows={2}
+                            placeholder="Ghi chú cho người bán: thời gian giao, yêu cầu đặc biệt..."
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
+                        </div>
                       </div>
-                    </div>
-                    <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-                      <div className="space-y-1.5 text-sm">
-                        <div className="flex justify-between text-gray-600"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
-                        {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
-                        <div className="flex justify-between font-black text-base pt-2 border-t border-blue-200 mt-2"><span>Tổng thanh toán</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
+                      <div className="p-5 border-t border-gray-100">
+                        <button onClick={() => { if (!shippingAddr.trim()) { showToast('Vui lòng nhập địa chỉ giao hàng', 'error'); return; } setCheckoutStep('payment'); }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
+                          Tiếp tục <ChevronRight className="w-5 h-5" />
+                        </button>
                       </div>
-                    </div>
-                  </div>
-                  <div className="p-5 border-t border-gray-100">
-                    <button onClick={handleCheckout} disabled={loading}
-                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
-                      {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Đang đặt hàng...</> : <><Check className="w-5 h-5" /> Xác nhận đặt hàng {formatPrice(finalTotal)}</>}
-                    </button>
-                    <p className="text-xs text-gray-400 text-center mt-3">Đơn hàng sẽ được gửi cho người bán và chờ xác nhận</p>
-                  </div>
+                    </>
+                  )}
+
+                  {/* ── Step: Payment ── */}
+                  {checkoutStep === 'payment' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                        <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Phương thức thanh toán</p>
+                        {[
+                          { id: 'cod', icon: '💵', label: 'Tiền mặt khi nhận hàng (COD)', desc: 'Thanh toán khi shipper giao tới' },
+                          { id: 'bank', icon: '🏦', label: 'Chuyển khoản ngân hàng', desc: 'Chuyển khoản trước khi giao hàng' },
+                          { id: 'momo', icon: '📱', label: 'Ví MoMo', desc: 'Thanh toán qua ứng dụng MoMo' },
+                        ].map(({ id, icon, label, desc }) => (
+                          <button key={id} onClick={() => setPaymentMethod(id as any)}
+                            className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${paymentMethod === id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                            <span className="text-2xl">{icon}</span>
+                            <div className="flex-1">
+                              <p className={`font-bold text-sm ${paymentMethod === id ? 'text-blue-700' : 'text-gray-800'}`}>{label}</p>
+                              <p className="text-xs text-gray-400">{desc}</p>
+                            </div>
+                            {paymentMethod === id && <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="p-5 border-t border-gray-100">
+                        <button onClick={() => setCheckoutStep('confirm')}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
+                          Xem lại đơn hàng <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── Step: Confirm ── */}
+                  {checkoutStep === 'confirm' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                        <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                          <p className="font-black text-sm text-gray-700">📦 Sản phẩm</p>
+                          {cart.map(item => (
+                            <div key={item.id} className="flex justify-between items-center">
+                              <span className="text-sm text-gray-700">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
+                              <span className="text-sm font-bold text-blue-600">{formatPrice(item.price * item.quantity)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
+                          <p className="font-black text-sm text-gray-700 mb-3">📋 Thông tin đơn hàng</p>
+                          <div className="text-sm space-y-2">
+                            <div className="flex gap-2"><MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600">{shippingAddr}</span></div>
+                            <div className="flex gap-2"><span className="text-lg leading-none">💳</span><span className="text-gray-600">{paymentMethod === 'cod' ? 'COD - Tiền mặt khi nhận' : paymentMethod === 'bank' ? 'Chuyển khoản ngân hàng' : 'Ví MoMo'}</span></div>
+                            {orderNote && <div className="flex gap-2"><MessageCircle className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600 italic">{orderNote}</span></div>}
+                          </div>
+                        </div>
+                        <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex justify-between text-gray-600"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
+                            {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
+                            <div className="flex justify-between font-black text-base pt-2 border-t border-blue-200 mt-2"><span>Tổng thanh toán</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-5 border-t border-gray-100">
+                        <button onClick={handleCheckout} disabled={loading}
+                          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
+                          {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Đang đặt hàng...</> : <><Check className="w-5 h-5" /> Xác nhận đặt hàng {formatPrice(finalTotal)}</>}
+                        </button>
+                        <p className="text-xs text-gray-400 text-center mt-3">Đơn hàng sẽ được gửi cho người bán và chờ xác nhận</p>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </motion.section>
