@@ -1,17 +1,3 @@
-Dưới đây là toàn bộ mã nguồn `App.tsx` đã được tích hợp hoàn chỉnh hệ thống Đánh giá chuyên nghiệp (Review có hình ảnh, bộ lọc đánh giá, thống kê sao, và tính năng phản hồi cho người bán).
-
-⚠️ **LƯU Ý QUAN TRỌNG:** Trước khi chạy code, bạn **BẮT BUỘC** phải chạy lệnh SQL này trong **Supabase SQL Editor** để cập nhật cấu trúc bảng `reviews`, nếu không app sẽ báo lỗi:
-```sql
-ALTER TABLE reviews 
-ADD COLUMN IF NOT EXISTS images text[] DEFAULT '{}',
-ADD COLUMN IF NOT EXISTS seller_reply text,
-ADD COLUMN IF NOT EXISTS reply_created_at timestamp with time zone;
-```
-
----
-
-### File `App.tsx` hoàn chỉnh:
-
 ```tsx
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
