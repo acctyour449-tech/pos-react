@@ -1,37 +1,66 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { 
-  ShoppingCart, Plus, Minus, Trash2, Zap, 
-  Loader2, AlertCircle, LayoutDashboard, BarChart3, Clock, DollarSign, 
-  LogIn, UserPlus, LogOut, Mail, Lock, Store, User, PackagePlus, 
-  ShoppingBag, Search, Filter, ChevronRight, Star, Edit,
-  Bell, BellRing, CheckCircle2, XCircle, Package, Truck, Check, X, RotateCcw
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+  ShoppingCart, Plus, Minus, Trash2, Zap, Loader2, AlertCircle,
+  LayoutDashboard, BarChart3, Clock, DollarSign, LogIn, UserPlus,
+  LogOut, Mail, Lock, Store, User, PackagePlus, ShoppingBag, Search,
+  Filter, ChevronRight, Star, Edit, Bell, BellRing, CheckCircle2,
+  Package, Truck, Check, X, Heart, Share2, Eye, TrendingUp,
+  Tag, Grid3X3, List, SlidersHorizontal, ChevronDown, ChevronUp,
+  MapPin, Phone, MessageCircle, RefreshCw, Award, Flame, Sparkles,
+  Camera, Upload, BarChart2, Users, ShoppingBasket, Percent,
+  ArrowUpRight, ArrowDownRight, Info, Copy, ExternalLink, Gift,
+  ChevronLeft, Home, Bookmark, Settings, HelpCircle, Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
-// ===================== INTERFACES =====================
+// ─────────── TYPES ───────────
 interface Product {
   id: number;
   name: string;
   price: number;
+  original_price?: number;
   category: string;
+  subcategory?: string;
   image: string;
+  images?: string[];
   seller_id: string;
+  seller_name?: string;
+  description?: string;
+  stock?: number;
+  sold_count?: number;
+  rating?: number;
+  review_count?: number;
+  tags?: string[];
+  is_featured?: boolean;
+  discount_percent?: number;
+  created_at?: string;
 }
 
 interface CartItem extends Product {
   quantity: number;
+  note?: string;
 }
 
 interface Order {
   id: number;
   created_at: string;
   total_price: number;
+  subtotal?: number;
+  discount_amount?: number;
+  shipping_fee?: number;
   items: any;
   seller_id: string;
   buyer_id: string;
+  buyer_name?: string;
+  buyer_email?: string;
   status: string;
+  shipping_address?: string;
+  payment_method?: string;
+  note?: string;
+  tracking_code?: string;
+  estimated_delivery?: string;
 }
 
 interface Notification {
@@ -39,25 +68,246 @@ interface Notification {
   user_id: string;
   order_id: number;
   message: string;
-  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order';
+  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order' | 'promo' | 'system';
   is_read: boolean;
+  created_at: string;
+}
+
+interface Review {
+  id: number;
+  product_id: number;
+  buyer_id: string;
+  buyer_name?: string;
+  rating: number;
+  comment: string;
   created_at: string;
 }
 
 interface Toast {
   id: number;
   message: string;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'info';
 }
 
-interface ProductPreference {
-  user_id: string;
-  product_id: number;
-  is_priority: boolean;
-  is_excluded: boolean;
+interface SellerProfile {
+  id: string;
+  shop_name?: string;
+  avatar?: string;
+  bio?: string;
+  phone?: string;
+  address?: string;
+  rating?: number;
+  total_sales?: number;
 }
 
-// ===================== AUTH FORM =====================
+// ─────────── CONSTANTS ───────────
+const CATEGORIES = [
+  { id: 'all', label: 'Tất cả', icon: '🏪', sub: [] },
+  { id: 'food', label: 'Thực phẩm', icon: '🥘', sub: ['Đồ ăn nhanh', 'Đặc sản', 'Hữu cơ', 'Bánh kẹo', 'Gia vị'] },
+  { id: 'drink', label: 'Đồ uống', icon: '☕', sub: ['Cà phê', 'Trà', 'Nước ép', 'Sinh tố', 'Nước đóng chai'] },
+  { id: 'fashion', label: 'Thời trang', icon: '👗', sub: ['Áo', 'Quần', 'Váy', 'Phụ kiện', 'Giày dép'] },
+  { id: 'electronics', label: 'Điện tử', icon: '📱', sub: ['Điện thoại', 'Laptop', 'Tai nghe', 'Phụ kiện', 'Smart home'] },
+  { id: 'beauty', label: 'Làm đẹp', icon: '💄', sub: ['Skincare', 'Makeup', 'Tóc', 'Nước hoa', 'Nail'] },
+  { id: 'home', label: 'Gia dụng', icon: '🏠', sub: ['Nội thất', 'Nhà bếp', 'Phòng ngủ', 'Trang trí', 'Vệ sinh'] },
+  { id: 'sport', label: 'Thể thao', icon: '⚽', sub: ['Gym', 'Yoga', 'Bơi lội', 'Chạy bộ', 'Cầu lông'] },
+  { id: 'books', label: 'Sách', icon: '📚', sub: ['Tiểu thuyết', 'Kỹ năng', 'Khoa học', 'Trẻ em', 'Giáo trình'] },
+];
+
+const ORDER_STATUSES = {
+  'Chờ xác nhận': { color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-400', label: 'Chờ xác nhận', next: 'Đã xác nhận', nextLabel: '✓ Xác nhận đơn', nextBg: 'bg-emerald-600 hover:bg-emerald-700' },
+  'Đã xác nhận':  { color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-400', label: 'Đã xác nhận', next: 'Đang giao', nextLabel: '🚚 Bắt đầu giao', nextBg: 'bg-blue-600 hover:bg-blue-700' },
+  'Đang giao':    { color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-400', label: 'Đang giao', next: 'Hoàn thành', nextLabel: '🎉 Xác nhận giao xong', nextBg: 'bg-violet-600 hover:bg-violet-700' },
+  'Hoàn thành':   { color: 'bg-violet-100 text-violet-700 border-violet-200', dot: 'bg-violet-400', label: 'Hoàn thành', next: null, nextLabel: null, nextBg: null },
+  'Đã hủy':       { color: 'bg-red-100 text-red-600 border-red-200', dot: 'bg-red-400', label: 'Đã hủy', next: null, nextLabel: null, nextBg: null },
+};
+
+const PROGRESS_STEPS = ['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'];
+
+// ─────────── HELPERS ───────────
+const formatPrice = (p: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p || 0);
+const isVideo = (url: string) => url && ['.mp4', '.webm', '.ogg', '.mov'].some(e => url.toLowerCase().split('?')[0].endsWith(e));
+const timeAgo = (date: string) => {
+  const diff = (Date.now() - new Date(date).getTime()) / 1000;
+  if (diff < 60) return 'vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+  return new Date(date).toLocaleDateString('vi-VN');
+};
+
+// ─────────── RATING STARS ───────────
+function Stars({ value, size = 'sm', onChange }: { value: number; size?: 'sm' | 'md' | 'lg'; onChange?: (v: number) => void }) {
+  const [hover, setHover] = useState(0);
+  const sz = size === 'sm' ? 'w-3.5 h-3.5' : size === 'md' ? 'w-5 h-5' : 'w-7 h-7';
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1,2,3,4,5].map(i => (
+        <Star key={i} className={`${sz} transition-colors cursor-${onChange ? 'pointer' : 'default'} ${(hover || value) >= i ? 'fill-amber-400 text-amber-400' : 'text-gray-200 fill-gray-200'}`}
+          onMouseEnter={() => onChange && setHover(i)}
+          onMouseLeave={() => onChange && setHover(0)}
+          onClick={() => onChange?.(i)} />
+      ))}
+    </div>
+  );
+}
+
+// ─────────── PRODUCT CARD (Buyer) ───────────
+function ProductCard({ product, onAddToCart, onWishlist, wishlisted, onView }: {
+  product: Product; onAddToCart: (p: Product) => void;
+  onWishlist: (id: number) => void; wishlisted: boolean; onView: (p: Product) => void;
+}) {
+  const discount = product.original_price ? Math.round((1 - product.price / product.original_price) * 100) : 0;
+  return (
+    <motion.div whileHover={{ y: -6 }} className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl hover:shadow-blue-600/8 transition-all group cursor-pointer"
+      onClick={() => onView(product)}>
+      <div className="h-52 overflow-hidden relative bg-gray-50">
+        {isVideo(product.image)
+          ? <video src={product.image} className="w-full h-full object-cover" muted loop onClick={e => { e.stopPropagation(); }} />
+          : <img src={product.image || `https://picsum.photos/seed/${product.id}/400/300`} alt={product.name}
+              className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-700" referrerPolicy="no-referrer" />}
+        {/* Badges */}
+        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+          {discount > 0 && <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{discount}%</span>}
+          {product.is_featured && <span className="bg-amber-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-0.5"><Flame className="w-2.5 h-2.5" />Hot</span>}
+          {product.sold_count && product.sold_count > 100 && <span className="bg-violet-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Bán chạy</span>}
+        </div>
+        {/* Wishlist */}
+        <button onClick={e => { e.stopPropagation(); onWishlist(product.id); }}
+          className={`absolute top-3 right-3 p-2.5 rounded-2xl backdrop-blur-sm transition-all ${wishlisted ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-400 hover:text-red-400'}`}>
+          <Heart className={`w-4 h-4 ${wishlisted ? 'fill-white' : ''}`} />
+        </button>
+        {/* Category badge */}
+        <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-[9px] font-black text-blue-600 uppercase tracking-widest px-2.5 py-1 rounded-full">
+          {product.category}
+        </div>
+      </div>
+      <div className="p-4">
+        <h3 className="font-bold text-sm leading-tight mb-1 line-clamp-2 group-hover:text-blue-600 transition-colors">{product.name}</h3>
+        {product.rating && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <Stars value={product.rating} />
+            <span className="text-[10px] text-gray-400 font-bold">({product.review_count || 0})</span>
+            {product.sold_count && <span className="text-[10px] text-gray-400 ml-1">• {product.sold_count} đã bán</span>}
+          </div>
+        )}
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-blue-600 font-black text-base">{formatPrice(product.price)}</p>
+            {product.original_price && <p className="text-gray-400 text-xs line-through">{formatPrice(product.original_price)}</p>}
+          </div>
+          <button onClick={e => { e.stopPropagation(); onAddToCart(product); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-2xl transition-all active:scale-95 shadow-lg shadow-blue-600/25">
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────── PRODUCT DETAIL MODAL ───────────
+function ProductDetailModal({ product, onClose, onAddToCart, wishlisted, onWishlist }: {
+  product: Product; onClose: () => void;
+  onAddToCart: (p: Product, qty: number, note: string) => void;
+  wishlisted: boolean; onWishlist: (id: number) => void;
+}) {
+  const [qty, setQty] = useState(1);
+  const [note, setNote] = useState('');
+  const [activeImg, setActiveImg] = useState(0);
+  const images = product.images?.length ? product.images : [product.image];
+  const discount = product.original_price ? Math.round((1 - product.price / product.original_price) * 100) : 0;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-6">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, y: 60, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 60 }}
+        className="relative bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Close */}
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors"><X className="w-5 h-5 text-white" /></button>
+        {/* Image Gallery */}
+        <div className="h-72 sm:h-80 bg-gray-100 relative overflow-hidden">
+          {isVideo(images[activeImg])
+            ? <video src={images[activeImg]} controls className="w-full h-full object-cover" />
+            : <img src={images[activeImg] || `https://picsum.photos/seed/${product.id}/600/400`} alt={product.name}
+                className="w-full h-full object-cover" referrerPolicy="no-referrer" />}
+          {images.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+              {images.map((_, i) => <button key={i} onClick={() => setActiveImg(i)}
+                className={`w-2 h-2 rounded-full transition-all ${i === activeImg ? 'bg-white w-6' : 'bg-white/50'}`} />)}
+            </div>
+          )}
+          {discount > 0 && <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-black px-3 py-1 rounded-full">-{discount}%</span>}
+        </div>
+        {/* Details */}
+        <div className="p-6 space-y-5">
+          <div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <h2 className="text-xl font-black text-gray-900 leading-tight">{product.name}</h2>
+              <button onClick={() => onWishlist(product.id)}
+                className={`p-2.5 rounded-2xl border transition-all flex-shrink-0 ${wishlisted ? 'bg-red-50 border-red-200 text-red-500' : 'border-gray-200 text-gray-400 hover:border-red-200 hover:text-red-400'}`}>
+                <Heart className={`w-5 h-5 ${wishlisted ? 'fill-red-500' : ''}`} />
+              </button>
+            </div>
+            {product.rating && (
+              <div className="flex items-center gap-2">
+                <Stars value={product.rating} size="md" />
+                <span className="text-sm text-gray-600 font-bold">{product.rating}/5</span>
+                <span className="text-sm text-gray-400">({product.review_count} đánh giá)</span>
+                {product.sold_count && <span className="text-sm text-gray-400">• {product.sold_count} đã bán</span>}
+              </div>
+            )}
+          </div>
+          {/* Price */}
+          <div className="flex items-center gap-3">
+            <span className="text-3xl font-black text-blue-600">{formatPrice(product.price)}</span>
+            {product.original_price && <>
+              <span className="text-lg text-gray-400 line-through">{formatPrice(product.original_price)}</span>
+              <span className="bg-red-100 text-red-600 text-xs font-black px-2 py-0.5 rounded-full">Tiết kiệm {formatPrice(product.original_price - product.price)}</span>
+            </>}
+          </div>
+          {/* Tags */}
+          {product.tags?.length && (
+            <div className="flex flex-wrap gap-2">
+              {product.tags.map(tag => <span key={tag} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1 rounded-full">#{tag}</span>)}
+            </div>
+          )}
+          {/* Description */}
+          {product.description && <p className="text-gray-600 text-sm leading-relaxed">{product.description}</p>}
+          {/* Stock */}
+          {product.stock !== undefined && (
+            <div className={`flex items-center gap-2 text-sm font-bold ${product.stock > 10 ? 'text-emerald-600' : product.stock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+              <Package className="w-4 h-4" />
+              {product.stock > 10 ? `Còn hàng (${product.stock} sản phẩm)` : product.stock > 0 ? `Chỉ còn ${product.stock} sản phẩm` : 'Hết hàng'}
+            </div>
+          )}
+          {/* Note */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Ghi chú đơn hàng (tùy chọn)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              placeholder="Ví dụ: Không hành, ít đường, giao buổi sáng..."
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all resize-none" />
+          </div>
+          {/* Quantity + Add to cart */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl p-1.5">
+              <button onClick={() => setQty(q => Math.max(1, q - 1))} className="p-2 hover:bg-gray-200 rounded-xl transition-colors"><Minus className="w-4 h-4" /></button>
+              <span className="font-black text-lg min-w-[2rem] text-center">{qty}</span>
+              <button onClick={() => setQty(q => q + 1)} className="p-2 hover:bg-gray-200 rounded-xl transition-colors"><Plus className="w-4 h-4" /></button>
+            </div>
+            <button onClick={() => { onAddToCart(product, qty, note); onClose(); }}
+              disabled={product.stock === 0}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-blue-600/20">
+              <ShoppingCart className="w-5 h-5" />
+              {product.stock === 0 ? 'Hết hàng' : `Thêm vào giỏ - ${formatPrice(product.price * qty)}`}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─────────── AUTH FORM ───────────
 function AuthForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -67,244 +317,129 @@ function AuthForm() {
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
+    e.preventDefault(); setLoading(true); setError(null);
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ 
-          email, 
-          password,
-          options: {
-            data: { role }
-          }
-        });
+        const { error } = await supabase.auth.signUp({ email, password, options: { data: { role } } });
         if (error) throw error;
-        alert('Đăng ký thành công! Một email xác nhận đã được gửi đến bạn. Vui lòng kiểm tra và xác nhận trước khi đăng nhập.');
+        alert('Đăng ký thành công! Kiểm tra email để xác nhận tài khoản.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Đã có lỗi xảy ra');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      setError(err.message || 'Lỗi đăng nhập Google');
-    }
+    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] p-6">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-[#E9ECEF] p-8"
-      >
-        <div className="flex flex-col items-center mb-8">
-          <div className="bg-blue-600 p-3 rounded-2xl mb-4 shadow-lg shadow-blue-600/20">
-            <Zap className="text-white w-8 h-8" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-6">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {[...Array(20)].map((_, i) => (
+          <div key={i} className="absolute rounded-full bg-blue-500/5"
+            style={{ width: Math.random() * 300 + 50, height: Math.random() * 300 + 50, left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`, transform: 'translate(-50%,-50%)' }} />
+        ))}
+      </div>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="relative w-full max-w-md bg-white/5 backdrop-blur-xl rounded-[2rem] border border-white/10 p-8 shadow-2xl">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4 shadow-xl shadow-blue-600/40">
+            <Zap className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Marketplace Pro</h1>
-          <p className="text-gray-500 font-medium">{isLogin ? 'Chào mừng bạn quay trở lại' : 'Tạo tài khoản mới'}</p>
+          <h1 className="text-3xl font-black text-white tracking-tight">Marketplace Pro</h1>
+          <p className="text-blue-200/70 mt-1">{isLogin ? 'Chào mừng quay lại' : 'Tạo tài khoản mới'}</p>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
-                placeholder="example@email.com"
-              />
+          {['email', 'password'].map(field => (
+            <div key={field} className="relative">
+              {field === 'email' ? <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" /> : <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300/50" />}
+              <input type={field === 'email' ? 'email' : 'password'} required
+                value={field === 'email' ? email : password}
+                onChange={e => field === 'email' ? setEmail(e.target.value) : setPassword(e.target.value)}
+                placeholder={field === 'email' ? 'Email của bạn' : 'Mật khẩu'}
+                className="w-full bg-white/10 border border-white/10 text-white placeholder-white/30 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all" />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Mật khẩu</label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
+          ))}
           {!isLogin && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Bạn là ai?</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => setRole('buyer')}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'buyer' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'}`}>
-                  <User className="w-6 h-6" />
-                  <span className="text-xs font-bold">Người mua</span>
+            <div className="grid grid-cols-2 gap-3">
+              {(['buyer', 'seller'] as const).map(r => (
+                <button key={r} type="button" onClick={() => setRole(r)}
+                  className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 transition-all ${role === r ? 'border-blue-400 bg-blue-500/20 text-blue-200' : 'border-white/10 text-white/50 hover:border-white/30'}`}>
+                  {r === 'buyer' ? <User className="w-4 h-4" /> : <Store className="w-4 h-4" />}
+                  <span className="text-sm font-bold">{r === 'buyer' ? 'Người mua' : 'Người bán'}</span>
                 </button>
-                <button type="button" onClick={() => setRole('seller')}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'seller' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-[#E9ECEF] bg-[#F8F9FA] text-gray-400 hover:border-gray-300'}`}>
-                  <Store className="w-6 h-6" />
-                  <span className="text-xs font-bold">Người bán</span>
-                </button>
-              </div>
+              ))}
             </div>
           )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-sm font-medium flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {error}
-            </div>
-          )}
-
+          {error && <div className="bg-red-500/20 border border-red-400/30 text-red-200 p-3 rounded-xl text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" />{error}</div>}
           <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]">
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-600/30 active:scale-[0.98]">
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLogin ? <LogIn className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
-            {isLogin ? 'Đăng nhập' : 'Đăng ký'}
+            {isLogin ? 'Đăng nhập' : 'Đăng ký ngay'}
           </button>
         </form>
-
-        <div className="mt-6 flex items-center gap-4">
-          <div className="flex-1 h-px bg-[#E9ECEF]"></div>
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hoặc</span>
-          <div className="flex-1 h-px bg-[#E9ECEF]"></div>
-        </div>
-
-        <button onClick={handleGoogleLogin}
-          className="w-full mt-6 bg-white border-2 border-[#E9ECEF] hover:border-gray-300 text-gray-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]">
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-          </svg>
-          Tiếp tục với Google
+        <button onClick={() => { setIsLogin(!isLogin); setError(null); }}
+          className="mt-6 w-full text-center text-sm text-blue-300/70 hover:text-blue-200 transition-colors">
+          {isLogin ? 'Chưa có tài khoản? → Đăng ký' : 'Đã có tài khoản? → Đăng nhập'}
         </button>
-
-        <div className="mt-8 pt-6 border-t border-[#E9ECEF] text-center">
-          <button onClick={() => setIsLogin(!isLogin)}
-            className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors">
-            {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
-          </button>
-        </div>
       </motion.div>
     </div>
   );
 }
 
-// ===================== ROLE SELECTION =====================
-function RoleSelection({ onSelect }: { onSelect: (role: 'seller' | 'buyer') => void }) {
-  const [loading, setLoading] = useState(false);
-
-  const handleSelect = async (selectedRole: 'seller' | 'buyer') => {
-    setLoading(true);
+// ─────────── ROLE SELECTION ───────────
+function RoleSelection({ onSelect }: { onSelect: (r: 'seller' | 'buyer') => void }) {
+  const [loading, setLoading] = useState<string | null>(null);
+  const handleSelect = async (r: 'seller' | 'buyer') => {
+    setLoading(r);
     try {
-      const { error } = await supabase.auth.updateUser({ data: { role: selectedRole } });
+      const { error } = await supabase.auth.updateUser({ data: { role: r } });
       if (error) throw error;
-      onSelect(selectedRole);
-    } catch (err: any) {
-      alert('Lỗi: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+      onSelect(r);
+    } catch (err: any) { alert(err.message); } finally { setLoading(null); }
   };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] p-6">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl border border-[#E9ECEF] p-12 text-center"
-      >
-        <div className="bg-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-blue-600/20">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-2xl text-center">
+        <div className="bg-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-600/30">
           <User className="text-white w-10 h-10" />
         </div>
-        <h1 className="text-4xl font-black tracking-tight mb-4">Chào mừng bạn!</h1>
-        <p className="text-gray-500 text-lg font-medium mb-12">Hãy chọn vai trò của bạn để bắt đầu trải nghiệm Marketplace</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <button disabled={loading} onClick={() => handleSelect('buyer')}
-            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]">
-            <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <ShoppingBag className="w-8 h-8" />
-            </div>
-            <h3 className="text-2xl font-black mb-2">Tôi là Người mua</h3>
-            <p className="text-gray-500 font-medium">Khám phá hàng ngàn sản phẩm tuyệt vời từ các người bán.</p>
-            <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
-          </button>
-          <button disabled={loading} onClick={() => handleSelect('seller')}
-            className="group relative bg-[#F8F9FA] border-2 border-[#E9ECEF] hover:border-blue-600 rounded-[2.5rem] p-10 transition-all hover:shadow-xl hover:shadow-blue-600/5 text-left active:scale-[0.98]">
-            <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <Store className="w-8 h-8" />
-            </div>
-            <h3 className="text-2xl font-black mb-2">Tôi là Người bán</h3>
-            <p className="text-gray-500 font-medium">Bắt đầu kinh doanh và tiếp cận hàng triệu khách hàng.</p>
-            <ChevronRight className="absolute right-8 bottom-8 w-6 h-6 text-gray-300 group-hover:text-blue-600 transition-colors" />
-          </button>
+        <h1 className="text-4xl font-black mb-3">Bạn muốn làm gì?</h1>
+        <p className="text-gray-500 mb-10 text-lg">Chọn vai trò để trải nghiệm phù hợp nhất</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[
+            { role: 'buyer' as const, icon: ShoppingBag, title: 'Tôi muốn mua sắm', desc: 'Khám phá hàng nghìn sản phẩm, mua sắm dễ dàng, theo dõi đơn hàng realtime', color: 'blue' },
+            { role: 'seller' as const, icon: Store, title: 'Tôi muốn bán hàng', desc: 'Mở gian hàng, quản lý sản phẩm, theo dõi doanh thu và xử lý đơn hàng', color: 'violet' },
+          ].map(({ role, icon: Icon, title, desc, color }) => (
+            <button key={role} onClick={() => handleSelect(role)} disabled={!!loading}
+              className={`group relative p-8 rounded-[2rem] border-2 text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${color === 'blue' ? 'border-blue-100 hover:border-blue-500 hover:bg-blue-50 bg-white' : 'border-violet-100 hover:border-violet-500 hover:bg-violet-50 bg-white'} shadow-sm hover:shadow-xl`}>
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-colors ${color === 'blue' ? 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white' : 'bg-violet-100 text-violet-600 group-hover:bg-violet-600 group-hover:text-white'}`}>
+                {loading === role ? <Loader2 className="w-7 h-7 animate-spin" /> : <Icon className="w-7 h-7" />}
+              </div>
+              <h3 className="text-xl font-black mb-2">{title}</h3>
+              <p className="text-gray-500 text-sm font-medium leading-relaxed">{desc}</p>
+              <ChevronRight className={`absolute right-6 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-300 group-hover:${color === 'blue' ? 'text-blue-600' : 'text-violet-600'} transition-colors`} />
+            </button>
+          ))}
         </div>
-        {loading && (
-          <div className="mt-8 flex items-center justify-center gap-2 text-blue-600 font-bold">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Đang thiết lập tài khoản...
-          </div>
-        )}
       </motion.div>
     </div>
   );
 }
 
-// ===================== NOTIFICATION PANEL =====================
-function NotificationPanel({ 
-  notifications, 
-  onClose, 
-  onMarkRead,
-  formatPrice
-}: { 
-  notifications: Notification[], 
-  onClose: () => void,
-  onMarkRead: (id: number) => void,
-  formatPrice: (p: number) => string
+// ─────────── NOTIFICATION PANEL ───────────
+function NotificationPanel({ notifications, onClose, onMarkRead, onMarkAllRead }: {
+  notifications: Notification[]; onClose: () => void;
+  onMarkRead: (id: number) => void; onMarkAllRead: () => void;
 }) {
-  const getIcon = (type: string) => {
-    switch(type) {
-      case 'order_confirmed': return <CheckCircle2 className="w-5 h-5 text-green-500" />;
-      case 'order_shipped': return <Truck className="w-5 h-5 text-blue-500" />;
-      case 'order_completed': return <Package className="w-5 h-5 text-purple-500" />;
-      case 'new_order': return <ShoppingBag className="w-5 h-5 text-orange-500" />;
-      default: return <Bell className="w-5 h-5 text-gray-500" />;
-    }
+  const icons: Record<string, React.ReactNode> = {
+    order_confirmed: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+    order_shipped:   <Truck className="w-5 h-5 text-blue-500" />,
+    order_completed: <Package className="w-5 h-5 text-violet-500" />,
+    new_order:       <ShoppingBag className="w-5 h-5 text-amber-500" />,
+    promo:           <Tag className="w-5 h-5 text-pink-500" />,
+    system:          <Bell className="w-5 h-5 text-gray-500" />,
   };
-
-  const getBg = (type: string) => {
-    switch(type) {
-      case 'order_confirmed': return 'bg-green-50 border-green-100';
-      case 'order_shipped': return 'bg-blue-50 border-blue-100';
-      case 'order_completed': return 'bg-purple-50 border-purple-100';
-      case 'new_order': return 'bg-orange-50 border-orange-100';
-      default: return 'bg-gray-50 border-gray-100';
-    }
-  };
-
+  const unread = notifications.filter(n => !n.is_read).length;
   return (
     <div className="fixed inset-0 z-[80] flex justify-end">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -312,744 +447,640 @@ function NotificationPanel({
       <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className="relative w-full max-w-sm bg-white h-full flex flex-col shadow-2xl">
-        <div className="p-6 border-b border-[#E9ECEF] flex justify-between items-center">
-          <h2 className="text-xl font-black flex items-center gap-2">
-            <BellRing className="w-5 h-5 text-blue-600" /> Thông báo
-          </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+        <div className="p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-lg font-black flex items-center gap-2"><BellRing className="w-5 h-5 text-blue-600" />Thông báo</h2>
+            {unread > 0 && <p className="text-xs text-gray-400">{unread} chưa đọc</p>}
+          </div>
+          <div className="flex items-center gap-2">
+            {unread > 0 && <button onClick={onMarkAllRead} className="text-xs font-bold text-blue-600 hover:underline">Đọc tất cả</button>}
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-4 h-4" /></button>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto">
           {notifications.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
-              <Bell className="w-16 h-16 opacity-10" />
-              <p className="font-bold">Chưa có thông báo nào</p>
+            <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-4 p-8">
+              <Bell className="w-16 h-16" /><p className="font-bold text-gray-500">Không có thông báo</p>
             </div>
-          ) : (
-            notifications.map(notif => (
-              <motion.div key={notif.id} layout
-                className={`p-4 rounded-2xl border ${getBg(notif.type)} ${!notif.is_read ? 'ring-2 ring-blue-200' : ''} cursor-pointer`}
-                onClick={() => !notif.is_read && onMarkRead(notif.id)}>
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5">{getIcon(notif.type)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-${!notif.is_read ? 'bold' : 'medium'} text-gray-900`}>{notif.message}</p>
-                    <p className="text-xs text-gray-400 mt-1">{new Date(notif.created_at).toLocaleString('vi-VN')}</p>
-                  </div>
-                  {!notif.is_read && <div className="w-2 h-2 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" />}
-                </div>
-              </motion.div>
-            ))
-          )}
+          ) : notifications.map(n => (
+            <div key={n.id} onClick={() => !n.is_read && onMarkRead(n.id)}
+              className={`flex items-start gap-3 p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50/50' : ''}`}>
+              <div className="mt-0.5 p-2 bg-gray-100 rounded-xl flex-shrink-0">{icons[n.type] || icons.system}</div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm ${!n.is_read ? 'font-bold text-gray-900' : 'font-medium text-gray-600'} leading-snug`}>{n.message}</p>
+                <p className="text-xs text-gray-400 mt-1">{timeAgo(n.created_at)}</p>
+              </div>
+              {!n.is_read && <div className="w-2 h-2 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" />}
+            </div>
+          ))}
         </div>
       </motion.div>
     </div>
   );
 }
 
-// ===================== MAIN APP =====================
+// ─────────── MAIN APP ───────────
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>('');
+  const [activeTab, setActiveTab] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [myBuyerOrders, setMyBuyerOrders] = useState<Order[]>([]);
+  const [buyerOrders, setBuyerOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reportsLoading, setReportsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-
-  // Buyer preferences state
-  const [preferences, setPreferences] = useState<ProductPreference[]>([]);
-  const [showExcluded, setShowExcluded] = useState(false);
-
-  // Seller specific state
+  const [wishlist, setWishlist] = useState<number[]>([]);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedSubcat, setSelectedSubcat] = useState('');
+  const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'rating' | 'popular'>('newest');
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000000]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Thực phẩm' });
+  const [newProduct, setNewProduct] = useState({ name: '', price: '', original_price: '', category: 'food', subcategory: '', description: '', stock: '100', tags: '' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [checkoutStep, setCheckoutStep] = useState<'cart' | 'address' | 'payment' | 'confirm'>('cart');
+  const [shippingAddr, setShippingAddr] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'bank' | 'momo'>('cod');
+  const [orderNote, setOrderNote] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [discount, setDiscount] = useState(0);
+  const [showSellerStats, setShowSellerStats] = useState(false);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  const role = useMemo(() => {
-    try {
-      if (!session?.user) return null;
-      return session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined;
-    } catch (err) {
-      return null;
-    }
-  }, [session]);
-
+  const role = useMemo(() => session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined, [session]);
   const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+  const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.price * i.quantity, 0), [cart]);
+  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + (Number(o.total_price) || 0), 0), [orders]);
+  const todayRevenue = useMemo(() => {
+    const today = new Date().toDateString();
+    return orders.filter(o => new Date(o.created_at).toDateString() === today).reduce((s, o) => s + Number(o.total_price), 0);
+  }, [orders]);
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = (message: string, type: Toast['type'] = 'success') => {
     const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    setToasts(p => [...p, { id, message, type }]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
   };
 
-  const formatPrice = (price: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+  // Filtered products
+  const filteredProducts = useMemo(() => {
+    let list = [...(role === 'seller' && activeTab === 'my-products' ? products : allProducts)];
+    if (searchQuery) list = list.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()) || p.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
+    if (selectedCategory !== 'all') {
+      const catLabel = CATEGORIES.find(c => c.id === selectedCategory)?.label;
+      if (catLabel) list = list.filter(p => p.category === catLabel);
+    }
+    if (selectedSubcat) list = list.filter(p => p.subcategory === selectedSubcat);
+    list = list.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+    switch (sortBy) {
+      case 'price_asc': list.sort((a, b) => a.price - b.price); break;
+      case 'price_desc': list.sort((a, b) => b.price - a.price); break;
+      case 'rating': list.sort((a, b) => (b.rating || 0) - (a.rating || 0)); break;
+      case 'popular': list.sort((a, b) => (b.sold_count || 0) - (a.sold_count || 0)); break;
+      default: list.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+    return list;
+  }, [allProducts, products, searchQuery, selectedCategory, selectedSubcat, sortBy, priceRange, role, activeTab]);
 
-  const isVideo = (url: string) => {
-    if (!url) return false;
-    return ['.mp4', '.webm', '.ogg', '.mov'].some(ext => url.toLowerCase().split('?')[0].endsWith(ext));
-  };
-
-  // ---- Auth ----
+  // ─── Auth ───
   useEffect(() => {
-    const checkSession = async () => {
+    const init = async () => {
       try {
-        setAuthLoading(true);
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        setSession(currentSession);
-      } catch (err: any) {
-        setError('Lỗi xác thực hệ thống.');
-      } finally {
-        setAuthLoading(false);
-      }
+        const { data: { session: s } } = await supabase.auth.getSession();
+        setSession(s);
+      } finally { setAuthLoading(false); }
     };
-    checkSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
-    });
+    init();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s));
     return () => subscription.unsubscribe();
   }, []);
 
-  // ---- Default tab ----
   useEffect(() => {
     if (role === 'seller') setActiveTab('my-products');
     else if (role === 'buyer') setActiveTab('marketplace');
   }, [role]);
 
-  // ---- Fetch products ----
-  useEffect(() => {
-    if (!session) return;
-    fetchProducts();
-  }, [session, activeTab]);
+  // ─── Fetch ───
+  useEffect(() => { if (session) { fetchAllProducts(); } }, [session]);
+  useEffect(() => { if (session && role === 'seller') fetchMyProducts(); }, [session, role, activeTab]);
+  useEffect(() => { if (activeTab === 'my-orders' && role === 'seller') fetchOrders(); }, [activeTab, role]);
+  useEffect(() => { if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders(); }, [activeTab, role]);
+  useEffect(() => { if (session?.user?.id) { fetchNotifications(); setupRealtime(); } }, [session?.user?.id]);
 
-  // ---- Fetch preferences for buyer ----
-  useEffect(() => {
-    if (role === 'buyer' && session?.user?.id) {
-      fetchPreferences();
-    }
-  }, [role, session]);
-
-  // ---- Fetch orders for seller ----
-  useEffect(() => {
-    if (activeTab === 'my-orders' && role === 'seller') fetchOrders();
-  }, [activeTab, role]);
-
-  // ---- Fetch buyer orders ----
-  useEffect(() => {
-    if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders();
-  }, [activeTab, role]);
-
-  // ---- Fetch notifications ----
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    fetchNotifications();
-    
-    const channel = supabase
-      .channel('notifications-channel')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${session.user.id}`
-      }, (payload) => {
-        const newNotif = payload.new as Notification;
-        setNotifications(prev => [newNotif, ...prev]);
-        showToast(`🔔 ${newNotif.message}`, 'success');
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id]);
-
-  // ---- Realtime: new orders for seller ----
-  useEffect(() => {
-    if (!session?.user?.id || role !== 'seller') return;
-    
-    const channel = supabase
-      .channel('seller-orders-channel')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'orders',
-        filter: `seller_id=eq.${session.user.id}`
-      }, (payload) => {
-        showToast('🛍️ Bạn có đơn hàng mới!', 'success');
-        if (activeTab === 'my-orders') fetchOrders();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, role, activeTab]);
-
-  async function fetchProducts() {
-    try {
-      setLoading(true);
-      let query = supabase.from('products').select('*');
-      if (role === 'seller' && activeTab === 'my-products') {
-        const userId = session?.user?.id;
-        if (userId) query = query.eq('seller_id', userId);
-        else { setProducts([]); return; }
-      }
-      const { data, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-      setProducts(data || []);
-    } catch (err: any) {
-      setError(err.message || 'Không thể tải danh sách sản phẩm.');
-    } finally {
-      setLoading(false);
-    }
+  async function fetchAllProducts() {
+    setLoading(true);
+    const { data } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+    setAllProducts(data || []);
+    setLoading(false);
   }
 
-  async function fetchPreferences() {
-    if (!session?.user?.id) return;
-    const { data } = await supabase
-      .from('product_preferences')
-      .select('*')
-      .eq('user_id', session.user.id);
-    setPreferences(data || []);
+  async function fetchMyProducts() {
+    if (activeTab !== 'my-products') return;
+    const { data } = await supabase.from('products').select('*').eq('seller_id', session!.user.id).order('created_at', { ascending: false });
+    setProducts(data || []);
   }
 
   async function fetchOrders() {
-    const userId = session?.user?.id;
-    if (!userId) return;
-    try {
-      setReportsLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from('orders').select('*').eq('seller_id', userId).order('created_at', { ascending: false });
-      if (fetchError) throw fetchError;
-      setOrders(data || []);
-    } catch (err: any) {
-      console.error('Error fetching orders:', err);
-    } finally {
-      setReportsLoading(false);
-    }
+    setOrdersLoading(true);
+    const { data } = await supabase.from('orders').select('*').eq('seller_id', session!.user.id).order('created_at', { ascending: false });
+    setOrders(data || []);
+    setOrdersLoading(false);
   }
 
   async function fetchBuyerOrders() {
-    const userId = session?.user?.id;
-    if (!userId) return;
-    try {
-      setReportsLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from('orders').select('*').eq('buyer_id', userId).order('created_at', { ascending: false });
-      if (fetchError) throw fetchError;
-      setMyBuyerOrders(data || []);
-    } catch (err: any) {
-      console.error('Error fetching buyer orders:', err);
-    } finally {
-      setReportsLoading(false);
-    }
+    setOrdersLoading(true);
+    const { data } = await supabase.from('orders').select('*').eq('buyer_id', session!.user.id).order('created_at', { ascending: false });
+    setBuyerOrders(data || []);
+    setOrdersLoading(false);
   }
 
   async function fetchNotifications() {
-    const userId = session?.user?.id;
-    if (!userId) return;
-    const { data } = await supabase
-      .from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', session!.user.id).order('created_at', { ascending: false }).limit(50);
     setNotifications(data || []);
   }
 
-  // ---- Buyer Preference Logic ----
-  const togglePreference = async (productId: number, field: 'is_priority' | 'is_excluded') => {
-    if (!session?.user?.id) return;
+  function setupRealtime() {
+    const userId = session!.user.id;
+    const ch = supabase.channel('rt-' + userId)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, payload => {
+        const n = payload.new as Notification;
+        setNotifications(prev => [n, ...prev]);
+        showToast(`🔔 ${n.message}`, 'info');
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }
 
-    const currentPref = preferences.find(p => p.product_id === productId);
-    const newValue = !currentPref?.[field];
-
-    // Optimistic Update
-    setPreferences(prev => {
-      const exists = prev.find(p => p.product_id === productId);
-      if (exists) {
-        return prev.map(p => p.product_id === productId ? { ...p, [field]: newValue } : p);
-      }
-      return [...prev, { 
-        user_id: session!.user.id, 
-        product_id: productId, 
-        is_priority: field === 'is_priority' ? newValue : false, 
-        is_excluded: field === 'is_excluded' ? newValue : false 
-      }];
-    });
-
-    try {
-      const { error } = await supabase
-        .from('product_preferences')
-        .upsert({ 
-          user_id: session.user.id, 
-          product_id: productId, 
-          [field]: newValue,
-          is_priority: currentPref ? currentPref.is_priority : (field === 'is_priority' ? newValue : false),
-          is_excluded: currentPref ? currentPref.is_excluded : (field === 'is_excluded' ? newValue : false),
-        });
-      if (error) throw error;
-      showToast(newValue ? 'Đã cập nhật' : 'Đã hủy chọn', 'success');
-    } catch (err: any) {
-      showToast('Lỗi cập nhật: ' + err.message, 'error');
-      fetchPreferences(); // Rollback
-    }
+  // ─── Product CRUD ───
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setSelectedFile(f);
+    setPreviewUrl(URL.createObjectURL(f));
   };
 
-  // Process products: Filter excluded and sort priority
-  const processedProducts = useMemo(() => {
-    if (!products) return [];
-    
-    let filtered = products.filter(p => {
-      const pref = preferences.find(pref => pref.product_id === p.id);
-      if (showExcluded) return pref?.is_excluded; // Mode xem SP đã loại bỏ
-      return !pref?.is_excluded; // Ẩn SP bị loại bỏ
-    });
-
-    return filtered.sort((a, b) => {
-      const prefA = preferences.find(p => p.product_id === a.id)?.is_priority;
-      const prefB = preferences.find(p => p.product_id === b.id)?.is_priority;
-      return (prefB ? 1 : 0) - (prefA ? 1 : 0);
-    });
-  }, [products, preferences, showExcluded]);
-
-  // ---- Add/Edit Product ----
-  const handleAddProduct = async (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user?.id) { alert('Vui lòng đăng nhập'); return; }
-    if (!editingProduct && !selectedFile) { alert('Vui lòng chọn ảnh hoặc video sản phẩm'); return; }
-
+    if (!editingProduct && !selectedFile) { showToast('Vui lòng chọn ảnh sản phẩm', 'error'); return; }
     try {
       setLoading(true);
       let imageUrl = editingProduct?.image || '';
-      if (selectedFile && session?.user?.id) {
-        const fileName = `${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
-        const filePath = `${session?.user?.id}/${fileName}`;
-        const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, selectedFile);
-        if (uploadError) throw uploadError;
-        const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(filePath);
-        imageUrl = publicUrl;
+      if (selectedFile) {
+        const path = `${session!.user.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
+        const { error: upErr } = await supabase.storage.from('assets').upload(path, selectedFile);
+        if (upErr) throw upErr;
+        imageUrl = supabase.storage.from('assets').getPublicUrl(path).data.publicUrl;
       }
-      if (editingProduct && session?.user?.id) {
-        const { error: updateError } = await supabase.from('products').update({
-          name: newProduct.name, price: Number(newProduct.price), category: newProduct.category, image: imageUrl
-        }).eq('id', editingProduct.id).eq('seller_id', session?.user?.id);
-        if (updateError) throw updateError;
+      const catLabel = CATEGORIES.find(c => c.id === newProduct.category)?.label || newProduct.category;
+      const data = {
+        name: newProduct.name, price: Number(newProduct.price),
+        original_price: newProduct.original_price ? Number(newProduct.original_price) : null,
+        category: catLabel, subcategory: newProduct.subcategory || null,
+        description: newProduct.description, stock: Number(newProduct.stock),
+        tags: newProduct.tags ? newProduct.tags.split(',').map(t => t.trim()).filter(Boolean) : null,
+        image: imageUrl, seller_id: session!.user.id,
+      };
+      if (editingProduct) {
+        const { error } = await supabase.from('products').update(data).eq('id', editingProduct.id).eq('seller_id', session!.user.id);
+        if (error) throw error;
         showToast('Cập nhật sản phẩm thành công!');
-      } else if (session?.user?.id) {
-        const { error: insertError } = await supabase.from('products').insert([{
-          name: newProduct.name, price: Number(newProduct.price), category: newProduct.category,
-          image: imageUrl, seller_id: session?.user?.id
-        }]);
-        if (insertError) throw insertError;
+      } else {
+        const { error } = await supabase.from('products').insert([data]);
+        if (error) throw error;
         showToast('Thêm sản phẩm thành công!');
       }
-      setShowAddProduct(false);
-      setEditingProduct(null);
-      setNewProduct({ name: '', price: '', category: 'Thực phẩm' });
-      setSelectedFile(null);
-      fetchProducts();
-    } catch (err: any) {
-      showToast('Lỗi: ' + (err.message || 'Đã có lỗi xảy ra'), 'error');
-    } finally {
-      setLoading(false);
-    }
+      resetProductForm();
+      fetchMyProducts(); fetchAllProducts();
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setLoading(false); }
   };
 
-  const handleDeleteProduct = async (id: number) => {
-    if (!session?.user?.id) return;
-    if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return;
-    try {
-      setLoading(true);
-      const { error: deleteError } = await supabase.from('products').delete().eq('id', id).eq('seller_id', session?.user?.id);
-      if (deleteError) throw deleteError;
-      showToast('Đã xóa sản phẩm');
-      fetchProducts();
-    } catch (err: any) {
-      showToast('Lỗi xóa sản phẩm: ' + (err.message || 'Không thể xóa'), 'error');
-    } finally {
-      setLoading(false);
-    }
+  const resetProductForm = () => {
+    setShowAddProduct(false); setEditingProduct(null); setSelectedFile(null); setPreviewUrl('');
+    setNewProduct({ name: '', price: '', original_price: '', category: 'food', subcategory: '', description: '', stock: '100', tags: '' });
   };
 
-  const openEditModal = (product: Product) => {
-    setEditingProduct(product);
-    setNewProduct({ name: product.name, price: product.price.toString(), category: product.category });
+  const openEdit = (p: Product) => {
+    setEditingProduct(p);
+    const catId = CATEGORIES.find(c => c.label === p.category)?.id || 'food';
+    setNewProduct({ name: p.name, price: p.price.toString(), original_price: p.original_price?.toString() || '', category: catId, subcategory: p.subcategory || '', description: p.description || '', stock: p.stock?.toString() || '100', tags: p.tags?.join(', ') || '' });
+    setPreviewUrl(p.image);
     setShowAddProduct(true);
   };
 
-  // ---- Cart ----
-  const addToCart = (product: Product) => {
+  const handleDeleteProduct = async (id: number) => {
+    if (!confirm('Xóa sản phẩm này?')) return;
+    const { error } = await supabase.from('products').delete().eq('id', id).eq('seller_id', session!.user.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast('Đã xóa sản phẩm');
+    fetchMyProducts(); fetchAllProducts();
+  };
+
+  // ─── Cart ───
+  const addToCart = (product: Product, qty = 1, note = '') => {
     setCart(prev => {
       if (prev.length > 0 && prev[0].seller_id !== product.seller_id) {
-        if (confirm('Giỏ hàng hiện tại có sản phẩm từ người bán khác. Bạn có muốn làm mới giỏ hàng không?')) {
-          showToast('Đã làm mới giỏ hàng', 'success');
-          return [{ ...product, quantity: 1 }];
-        }
-        return prev;
+        if (!confirm('Giỏ hàng có sản phẩm từ cửa hàng khác. Làm mới giỏ hàng?')) return prev;
+        return [{ ...product, quantity: qty, note }];
       }
-      const existing = prev.find(item => item.id === product.id);
-      if (existing) {
-        showToast(`Đã tăng số lượng ${product.name}`, 'success');
-        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
-      }
-      showToast(`Đã thêm ${product.name} vào giỏ`, 'success');
-      return [...prev, { ...product, quantity: 1 }];
+      const existing = prev.find(i => i.id === product.id);
+      if (existing) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + qty } : i);
+      return [...prev, { ...product, quantity: qty, note }];
     });
+    showToast(`✓ Đã thêm ${product.name} vào giỏ`);
   };
 
-  const removeFromCart = (productId: number) => setCart(prev => prev.filter(item => item.id !== productId));
+  const updateQty = (id: number, delta: number) => setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(1, i.quantity + delta) } : i));
+  const removeFromCart = (id: number) => setCart(prev => prev.filter(i => i.id !== id));
 
-  const updateQuantity = (productId: number, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === productId) {
-        const newQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    }));
+  const applyCoupon = () => {
+    if (couponCode.toUpperCase() === 'SALE10') { setDiscount(0.1); showToast('Áp dụng mã giảm 10% thành công!'); }
+    else if (couponCode.toUpperCase() === 'WELCOME') { setDiscount(0.15); showToast('Áp dụng mã giảm 15% thành công!'); }
+    else { showToast('Mã giảm giá không hợp lệ', 'error'); }
   };
 
-  const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
-  const totalRevenue = useMemo(() => orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0), [orders]);
+  const finalTotal = cartTotal * (1 - discount);
 
+  // ─── Checkout ───
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    const buyerId = session?.user?.id;
-    if (!buyerId) return;
-
+    if (!cart.length || !session?.user?.id) return;
     try {
       setLoading(true);
       const orderData = {
-        total_price: total,
-        seller_id: cart[0].seller_id,
-        buyer_id: buyerId,
-        status: 'Chờ xác nhận',
-        items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity }))
+        total_price: finalTotal, subtotal: cartTotal, discount_amount: cartTotal * discount,
+        shipping_fee: 0, seller_id: cart[0].seller_id, buyer_id: session.user.id,
+        buyer_email: session.user.email, status: 'Chờ xác nhận',
+        shipping_address: shippingAddr, payment_method: paymentMethod, note: orderNote,
+        items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity, note: i.note }))
       };
-
-      const { data: newOrder, error: checkoutError } = await supabase
-        .from('orders').insert([orderData]).select().single();
-      if (checkoutError) throw checkoutError;
-
+      const { data: order, error } = await supabase.from('orders').insert([orderData]).select().single();
+      if (error) throw error;
+      // Notify seller
       await supabase.from('notifications').insert([{
-        user_id: cart[0].seller_id,
-        order_id: newOrder.id,
-        message: `🛍️ Bạn có đơn hàng mới #${String(newOrder.id).slice(-6)} - ${formatPrice(total)}`,
-        type: 'new_order',
-        is_read: false
+        user_id: cart[0].seller_id, order_id: order.id,
+        message: `🛍️ Đơn hàng mới #${String(order.id).slice(-6)} — ${formatPrice(finalTotal)}`,
+        type: 'new_order', is_read: false
       }]);
-
-      showToast('Đặt hàng thành công! Đang chờ người bán xác nhận 🎉', 'success');
-      setCart([]);
-      setShowCart(false);
-    } catch (err: any) {
-      showToast('Lỗi đặt hàng: ' + (err.message || 'Không thể lưu đơn hàng'), 'error');
-    } finally {
-      setLoading(false);
-    }
+      showToast('🎉 Đặt hàng thành công! Đang chờ xác nhận...', 'success');
+      setCart([]); setShowCart(false); setCheckoutStep('cart');
+      setShippingAddr(''); setOrderNote(''); setCouponCode(''); setDiscount(0);
+    } catch (err: any) { showToast(err.message, 'error'); } finally { setLoading(false); }
   };
 
+  // ─── Order Status Update (Seller) ───
   const updateOrderStatus = async (order: Order, newStatus: string) => {
     try {
-      setReportsLoading(true);
-      const { error: updateError } = await supabase
-        .from('orders').update({ status: newStatus }).eq('id', order.id);
-      if (updateError) throw updateError;
-
-      let message = '';
-      let type: Notification['type'] = 'order_confirmed';
-      if (newStatus === 'Đã xác nhận') {
-        message = `✅ Đơn hàng #${String(order.id).slice(-6)} của bạn đã được xác nhận!`;
-        type = 'order_confirmed';
-      } else if (newStatus === 'Đang giao') {
-        message = `🚚 Đơn hàng #${String(order.id).slice(-6)} đang được giao đến bạn!`;
-        type = 'order_shipped';
-      } else if (newStatus === 'Hoàn thành') {
-        message = `🎉 Đơn hàng #${String(order.id).slice(-6)} đã hoàn thành. Cảm ơn bạn!`;
-        type = 'order_completed';
+      const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
+      if (error) throw error;
+      const msgMap: Record<string, string> = {
+        'Đã xác nhận': `✅ Đơn hàng #${String(order.id).slice(-6)} đã được xác nhận!`,
+        'Đang giao':   `🚚 Đơn hàng #${String(order.id).slice(-6)} đang được giao đến bạn!`,
+        'Hoàn thành':  `🎉 Đơn hàng #${String(order.id).slice(-6)} đã hoàn thành. Cảm ơn bạn!`,
+      };
+      const typeMap: Record<string, Notification['type']> = { 'Đã xác nhận': 'order_confirmed', 'Đang giao': 'order_shipped', 'Hoàn thành': 'order_completed' };
+      if (msgMap[newStatus] && order.buyer_id) {
+        await supabase.from('notifications').insert([{ user_id: order.buyer_id, order_id: order.id, message: msgMap[newStatus], type: typeMap[newStatus], is_read: false }]);
       }
-
-      if (message && order.buyer_id) {
-        await supabase.from('notifications').insert([{
-          user_id: order.buyer_id,
-          order_id: order.id,
-          message,
-          type,
-          is_read: false
-        }]);
-      }
-
-      showToast(`Đã cập nhật trạng thái: ${newStatus}`, 'success');
+      showToast(`Đã cập nhật: ${newStatus}`);
       fetchOrders();
-    } catch (err: any) {
-      showToast('Lỗi cập nhật trạng thái: ' + err.message, 'error');
-    } finally {
-      setReportsLoading(false);
+    } catch (err: any) { showToast(err.message, 'error'); }
+  };
+
+  const cancelOrder = async (order: Order) => {
+    if (!confirm('Hủy đơn hàng này?')) return;
+    const { error } = await supabase.from('orders').update({ status: 'Đã hủy' }).eq('id', order.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    if (order.buyer_id) {
+      await supabase.from('notifications').insert([{ user_id: order.buyer_id, order_id: order.id, message: `❌ Đơn hàng #${String(order.id).slice(-6)} đã bị hủy.`, type: 'system', is_read: false }]);
     }
+    showToast('Đã hủy đơn hàng');
+    fetchOrders();
   };
 
-  const markNotificationRead = async (id: number) => {
+  const markNotifRead = async (id: number) => {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setNotifications(p => p.map(n => n.id === id ? { ...n, is_read: true } : n));
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); };
-
-  const statusConfig: Record<string, { color: string; label: string; next?: string; nextLabel?: string; nextColor?: string }> = {
-    'Chờ xác nhận': { color: 'bg-yellow-100 text-yellow-700', label: 'Chờ xác nhận', next: 'Đã xác nhận', nextLabel: 'Xác nhận', nextColor: 'bg-green-600 hover:bg-green-700' },
-    'Đã xác nhận':  { color: 'bg-green-100 text-green-700',  label: 'Đã xác nhận',  next: 'Đang giao',   nextLabel: 'Giao hàng', nextColor: 'bg-blue-600 hover:bg-blue-700' },
-    'Đang giao':    { color: 'bg-blue-100 text-blue-700',    label: 'Đang giao',    next: 'Hoàn thành',  nextLabel: 'Hoàn thành', nextColor: 'bg-purple-600 hover:bg-purple-700' },
-    'Hoàn thành':   { color: 'bg-purple-100 text-purple-700', label: 'Hoàn thành' },
+  const markAllNotifsRead = async () => {
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', session!.user.id).eq('is_read', false);
+    setNotifications(p => p.map(n => ({ ...n, is_read: true })));
   };
 
+  // ─── Guards ───
   if (!supabaseUrl || !supabaseKey) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center">
-        <AlertCircle className="w-16 h-16 text-red-600 mb-4" />
-        <h1 className="text-2xl font-black text-red-900 mb-2">Thiếu cấu hình Supabase</h1>
-        <p className="text-red-700 max-w-md">Vui lòng kiểm tra các biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY.</p>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-red-50 p-6 text-center">
+      <div><AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" /><h1 className="text-2xl font-black text-red-900">Thiếu cấu hình Supabase</h1><p className="text-red-600 mt-2">Kiểm tra VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY</p></div>
+    </div>;
   }
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8F9FA] gap-4">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <p className="text-gray-500 font-bold animate-pulse">Đang tải hệ thống...</p>
-      </div>
-    );
-  }
-
-  if (error && !session) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6 text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-        <h2 className="text-xl font-bold mb-2">Đã có lỗi xảy ra</h2>
-        <p className="text-gray-500 mb-6">{error}</p>
-        <button onClick={() => window.location.reload()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-blue-600/20">Tải lại trang</button>
-      </div>
-    );
-  }
-
+  if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
   if (!session) return <AuthForm />;
+  if (!role) return <RoleSelection onSelect={() => supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))} />;
 
-  if (!role) {
-    return <RoleSelection onSelect={(selectedRole) => {
-      try {
-        supabase.auth.getSession().then(({ data: { session: updatedSession } }) => { setSession(updatedSession); });
-      } catch (err) {}
-    }} />;
-  }
+  const catOptions = CATEGORIES.find(c => c.id === newProduct.category)?.sub || [];
 
+  // ─────────────────────────────────────────────────────────────────────
+  //                          MAIN RENDER
+  // ─────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F8F9FA] font-sans text-[#1A1A1A]">
+    <div className="min-h-screen bg-[#F8F9FA] font-sans text-gray-900">
 
-      <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3">
+      {/* ── Toasts ── */}
+      <div className="fixed top-6 right-6 z-[150] flex flex-col gap-3 pointer-events-none">
         <AnimatePresence>
-          {toasts.map(toast => (
-            <motion.div key={toast.id}
-              initial={{ opacity: 0, x: 50, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-              className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md ${toast.type === 'success' ? 'bg-green-500/90 border-green-400 text-white' : 'bg-red-500/90 border-red-400 text-white'}`}>
-              {toast.type === 'success' ? <Zap className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-              <span className="font-bold text-sm">{toast.message}</span>
+          {toasts.map(t => (
+            <motion.div key={t.id} initial={{ opacity: 0, x: 60, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className={`pointer-events-auto flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl border text-sm font-bold max-w-xs ${t.type === 'success' ? 'bg-gray-900 text-white border-gray-700' : t.type === 'error' ? 'bg-red-600 text-white border-red-500' : 'bg-blue-600 text-white border-blue-500'}`}>
+              {t.type === 'success' ? <Check className="w-4 h-4 flex-shrink-0" /> : t.type === 'error' ? <X className="w-4 h-4 flex-shrink-0" /> : <Bell className="w-4 h-4 flex-shrink-0" />}
+              {t.message}
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
 
-      <nav className="bg-white border-b border-[#E9ECEF] px-6 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto flex justify-between items-center h-20">
-          <div className="flex items-center gap-10">
-            <div className="flex items-center gap-2">
-              <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-600/20">
-                <ShoppingBag className="text-white w-6 h-6" />
+      {/* ── Notification Panel ── */}
+      <AnimatePresence>
+        {showNotifications && <NotificationPanel notifications={notifications} onClose={() => setShowNotifications(false)} onMarkRead={markNotifRead} onMarkAllRead={markAllNotifsRead} />}
+      </AnimatePresence>
+
+      {/* ── Product Detail Modal ── */}
+      <AnimatePresence>
+        {viewProduct && <ProductDetailModal product={viewProduct} onClose={() => setViewProduct(null)} onAddToCart={(p, qty, note) => addToCart(p, qty, note)} wishlisted={wishlist.includes(viewProduct.id)} onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])} />}
+      </AnimatePresence>
+
+      {/* ══════════════════════════════ NAVBAR ══════════════════════════════ */}
+      <nav className="bg-white/95 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-6">
+          {/* Logo */}
+          <div className="flex items-center gap-8">
+            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab(role === 'seller' ? 'my-products' : 'marketplace')}>
+              <div className="bg-blue-600 w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                <Zap className="w-5 h-5 text-white" />
               </div>
-              <span className="text-2xl font-black tracking-tight">Marketplace</span>
+              <span className="text-lg font-black tracking-tight hidden sm:block">Marketplace</span>
+              <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md ${role === 'seller' ? 'bg-violet-100 text-violet-600' : 'bg-blue-100 text-blue-600'}`}>
+                {role === 'seller' ? 'Seller' : 'Buyer'}
+              </span>
             </div>
-            <div className="hidden md:flex gap-2">
+            {/* Nav Tabs */}
+            <div className="hidden md:flex items-center gap-1">
               {role === 'seller' ? (
                 <>
-                  <button onClick={() => setActiveTab('my-products')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-products' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    <LayoutDashboard className="w-4 h-4" /> Sản phẩm của tôi
-                  </button>
-                  <button onClick={() => setActiveTab('my-orders')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-orders' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    <BarChart3 className="w-4 h-4" /> Đơn hàng nhận được
-                  </button>
+                  {[
+                    { id: 'my-products', icon: LayoutDashboard, label: 'Sản phẩm' },
+                    { id: 'my-orders', icon: BarChart3, label: 'Đơn hàng' },
+                  ].map(({ id, icon: Icon, label }) => (
+                    <button key={id} onClick={() => setActiveTab(id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-100'}`}>
+                      <Icon className="w-4 h-4" />{label}
+                    </button>
+                  ))}
                 </>
               ) : (
                 <>
-                  <button onClick={() => setActiveTab('marketplace')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'marketplace' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    <Zap className="w-4 h-4" /> Chợ chung
-                  </button>
-                  <button onClick={() => setActiveTab('my-purchases')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'my-purchases' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    <Package className="w-4 h-4" /> Đơn của tôi
-                  </button>
+                  {[
+                    { id: 'marketplace', icon: Home, label: 'Mua sắm' },
+                    { id: 'my-purchases', icon: Package, label: 'Đơn của tôi' },
+                    { id: 'wishlist-tab', icon: Heart, label: 'Yêu thích' },
+                  ].map(({ id, icon: Icon, label }) => (
+                    <button key={id} onClick={() => setActiveTab(id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:bg-gray-100'}`}>
+                      <Icon className="w-4 h-4" />{label}
+                    </button>
+                  ))}
                 </>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Right side */}
+          <div className="flex items-center gap-2">
             {role === 'buyer' && (
-              <button onClick={() => setShowCart(true)}
-                className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
-                <ShoppingCart className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
-                {(cart || []).length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-lg">
-                    {(cart || []).length}
-                  </span>
-                )}
+              <button onClick={() => { setShowCart(true); setCheckoutStep('cart'); }}
+                className="relative p-2.5 hover:bg-gray-100 rounded-xl transition-colors">
+                <ShoppingCart className="w-5 h-5 text-gray-600" />
+                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">{cart.length}</span>}
               </button>
             )}
-            <button onClick={() => setShowNotifications(true)}
-              className="relative p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm group">
-              <Bell className="w-6 h-6 text-gray-700 group-hover:text-blue-600 transition-colors" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-lg animate-pulse">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
+            <button onClick={() => setShowNotifications(true)} className="relative p-2.5 hover:bg-gray-100 rounded-xl transition-colors">
+              <Bell className="w-5 h-5 text-gray-600" />
+              {unreadCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white animate-pulse">{unreadCount > 9 ? '9+' : unreadCount}</span>}
             </button>
-            <div className="text-right hidden sm:block">
-              <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-0.5">
-                {role === 'seller' ? 'Người bán' : 'Người mua'}
-              </p>
-              <p className="text-sm font-bold text-gray-900">{session?.user?.email}</p>
+            <div className="hidden sm:flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">
+              <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center">
+                <User className="w-4 h-4 text-blue-600" />
+              </div>
+              <span className="text-xs font-bold text-gray-700 max-w-[120px] truncate">{session?.user?.email}</span>
             </div>
-            <button onClick={handleLogout}
-              className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100">
+            <button onClick={() => supabase.auth.signOut()}
+              className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
       </nav>
 
-      <AnimatePresence>
-        {showNotifications && (
-          <NotificationPanel
-            notifications={notifications}
-            onClose={() => setShowNotifications(false)}
-            onMarkRead={markNotificationRead}
-            formatPrice={formatPrice}
-          />
-        )}
-      </AnimatePresence>
-
+      {/* ══════════════════════════════════════════════════════════════════ */}
       <AnimatePresence mode="wait">
 
-        {activeTab === 'my-products' ? (
-          <motion.main key="my-products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="max-w-7xl mx-auto p-6 space-y-8">
-            <div className="flex justify-between items-center">
+        {/* ██████████████████  SELLER: MY PRODUCTS  ██████████████████ */}
+        {activeTab === 'my-products' && (
+          <motion.main key="my-products" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-3xl font-black tracking-tight">Cửa hàng của bạn</h2>
-                <p className="text-gray-500 font-medium">Quản lý các sản phẩm bạn đang kinh doanh</p>
+                <h1 className="text-2xl font-black tracking-tight">Sản phẩm của tôi</h1>
+                <p className="text-gray-500 text-sm">{products.length} sản phẩm đang kinh doanh</p>
               </div>
               <button onClick={() => setShowAddProduct(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]">
-                <PackagePlus className="w-5 h-5" /> Thêm sản phẩm mới
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-2xl flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] text-sm">
+                <PackagePlus className="w-4 h-4" /> Thêm sản phẩm
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {loading ? (
-                <div className="col-span-full h-64 flex flex-col items-center justify-center text-gray-400 gap-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                  <p className="font-medium">Đang tải sản phẩm...</p>
-                </div>
-              ) : (products || []).length === 0 ? (
-                <div className="col-span-full h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[2rem] border-2 border-dashed border-[#E9ECEF]">
-                  <div className="bg-gray-50 p-8 rounded-full"><Store className="w-16 h-16 opacity-10" /></div>
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-gray-900">Chưa có sản phẩm nào</p>
-                    <p className="font-medium">Hãy bắt đầu bằng việc thêm sản phẩm đầu tiên</p>
-                  </div>
-                  <button onClick={() => setShowAddProduct(true)} className="mt-4 text-blue-600 font-bold hover:underline">Thêm ngay</button>
-                </div>
-              ) : (
-                (products || []).map((product) => (
-                  <div key={product.id} className="bg-white rounded-3xl border border-[#E9ECEF] overflow-hidden shadow-sm group">
-                    <div className="h-48 overflow-hidden relative">
-                      {isVideo(product.image) ? (
-                        <video src={product.image} controls className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
-                      )}
-                      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-wider">{product.category}</div>
-                    </div>
-                    <div className="p-5">
-                      <h3 className="font-bold text-lg mb-1 truncate">{product.name}</h3>
-                      <div className="flex justify-between items-center">
-                        <p className="text-blue-600 font-black text-xl">{formatPrice(product.price)}</p>
-                        <div className="flex gap-2">
-                          <button onClick={() => openEditModal(product)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" title="Chỉnh sửa"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Xóa"><Trash2 className="w-4 h-4" /></button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+            {/* Filters Row */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Tìm sản phẩm..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setViewMode('grid')} className={`p-2.5 rounded-xl border transition-all ${viewMode === 'grid' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><Grid3X3 className="w-4 h-4" /></button>
+                <button onClick={() => setViewMode('list')} className={`p-2.5 rounded-xl border transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><List className="w-4 h-4" /></button>
+              </div>
             </div>
 
+            {/* Product Grid */}
+            {loading ? (
+              <div className="flex items-center justify-center h-64 gap-3 text-gray-400"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /><span className="font-medium">Đang tải...</span></div>
+            ) : products.length === 0 ? (
+              <div className="bg-white rounded-3xl border-2 border-dashed border-gray-200 p-16 text-center">
+                <Store className="w-14 h-14 text-gray-200 mx-auto mb-4" />
+                <p className="text-lg font-bold text-gray-700 mb-1">Cửa hàng trống</p>
+                <p className="text-gray-400 text-sm mb-4">Thêm sản phẩm đầu tiên để bắt đầu bán hàng</p>
+                <button onClick={() => setShowAddProduct(true)} className="text-blue-600 font-bold hover:underline text-sm">+ Thêm ngay</button>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {(searchQuery ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())) : products).map(p => (
+                  <div key={p.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all group">
+                    <div className="h-40 overflow-hidden relative bg-gray-50">
+                      {isVideo(p.image) ? <video src={p.image} className="w-full h-full object-cover" muted /> : <img src={p.image || `https://picsum.photos/seed/${p.id}/300/200`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />}
+                      {(p.stock || 0) <= 5 && <span className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">Sắp hết</span>}
+                    </div>
+                    <div className="p-3">
+                      <p className="font-bold text-sm truncate mb-0.5">{p.name}</p>
+                      <p className="text-blue-600 font-black text-sm">{formatPrice(p.price)}</p>
+                      {p.original_price && <p className="text-gray-400 text-xs line-through">{formatPrice(p.original_price)}</p>}
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[10px] text-gray-400 font-medium">{p.stock ?? '∞'} kho</span>
+                        <div className="flex gap-1">
+                          <button onClick={() => openEdit(p)} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteProduct(p.id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
+                {(searchQuery ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())) : products).map((p, i) => (
+                  <div key={p.id} className={`flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0">
+                      <img src={p.image || `https://picsum.photos/seed/${p.id}/100`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm truncate">{p.name}</p>
+                      <p className="text-xs text-gray-400">{p.category}{p.subcategory ? ` > ${p.subcategory}` : ''}</p>
+                      {p.tags?.length && <div className="flex gap-1 mt-1">{p.tags.slice(0, 3).map(t => <span key={t} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">#{t}</span>)}</div>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-black text-blue-600 text-sm">{formatPrice(p.price)}</p>
+                      {p.original_price && <p className="text-xs text-gray-400 line-through">{formatPrice(p.original_price)}</p>}
+                      <p className={`text-[10px] font-bold mt-0.5 ${(p.stock || 0) <= 5 ? 'text-red-500' : 'text-gray-400'}`}>{p.stock ?? '∞'} còn</p>
+                    </div>
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <button onClick={() => openEdit(p)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-xl transition-colors"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => handleDeleteProduct(p.id)} className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-colors"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add/Edit Modal */}
             <AnimatePresence>
               {showAddProduct && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    onClick={() => setShowAddProduct(false)} className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
-                  <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl p-10">
-                    <h3 className="text-2xl font-black mb-6">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
-                    <form onSubmit={handleAddProduct} className="space-y-5">
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Tên sản phẩm</label>
-                        <input type="text" required value={newProduct.name} onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium" placeholder="Ví dụ: Cà phê sữa đá" />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={resetProductForm} />
+                  <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                    className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="sticky top-0 bg-white border-b border-gray-100 px-8 py-5 flex items-center justify-between z-10 rounded-t-3xl">
+                      <h3 className="text-xl font-black">{editingProduct ? '✏️ Chỉnh sửa sản phẩm' : '📦 Thêm sản phẩm mới'}</h3>
+                      <button onClick={resetProductForm} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5" /></button>
+                    </div>
+                    <form onSubmit={handleSaveProduct} className="p-8 space-y-6">
+                      {/* Image Upload */}
+                      <div className="space-y-3">
+                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Ảnh / Video sản phẩm</label>
+                        <div className="relative h-44 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden group hover:border-blue-400 transition-colors">
+                          {previewUrl ? (
+                            isVideo(previewUrl) ? <video src={previewUrl} className="w-full h-full object-cover" muted /> : <img src={previewUrl} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                              <Camera className="w-10 h-10 mb-2" /><p className="text-sm font-medium">Nhấn để chọn ảnh hoặc video</p><p className="text-xs mt-1">JPG, PNG, MP4 tối đa 10MB</p>
+                            </div>
+                          )}
+                          <input type="file" accept="image/*,video/*" required={!editingProduct} onChange={handleFileChange}
+                            className="absolute inset-0 opacity-0 cursor-pointer" />
+                          {previewUrl && <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm p-1.5 rounded-lg"><Camera className="w-4 h-4 text-gray-600" /></div>}
+                        </div>
                       </div>
+                      {/* Name */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Tên sản phẩm *</label>
+                        <input required value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))}
+                          placeholder="Nhập tên sản phẩm..."
+                          className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+                      </div>
+                      {/* Category */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Giá bán (VND)</label>
-                          <input type="number" required value={newProduct.price} onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
-                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium" placeholder="35000" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Danh mục</label>
-                          <select value={newProduct.category} onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
-                            className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium appearance-none">
-                            <option>Thực phẩm</option><option>Đồ uống</option><option>Thời trang</option><option>Điện tử</option>
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Danh mục *</label>
+                          <select value={newProduct.category} onChange={e => setNewProduct(p => ({ ...p, category: e.target.value, subcategory: '' }))}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 appearance-none">
+                            {CATEGORIES.filter(c => c.id !== 'all').map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
                           </select>
                         </div>
+                        {catOptions.length > 0 && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Phân loại</label>
+                            <select value={newProduct.subcategory} onChange={e => setNewProduct(p => ({ ...p, subcategory: e.target.value }))}
+                              className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 appearance-none">
+                              <option value="">-- Chọn loại --</option>
+                              {catOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        )}
                       </div>
+                      {/* Price */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Giá bán (VND) *</label>
+                          <input type="number" required value={newProduct.price} onChange={e => setNewProduct(p => ({ ...p, price: e.target.value }))}
+                            placeholder="0"
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Giá gốc (để tạo sale)</label>
+                          <input type="number" value={newProduct.original_price} onChange={e => setNewProduct(p => ({ ...p, original_price: e.target.value }))}
+                            placeholder="Để trống nếu không có sale"
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+                        </div>
+                      </div>
+                      {/* Stock + Tags */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Số lượng kho</label>
+                          <input type="number" value={newProduct.stock} onChange={e => setNewProduct(p => ({ ...p, stock: e.target.value }))}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Tags (phân cách bởi dấu phẩy)</label>
+                          <input value={newProduct.tags} onChange={e => setNewProduct(p => ({ ...p, tags: e.target.value }))}
+                            placeholder="tươi, ngon, hữu cơ..."
+                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all" />
+                        </div>
+                      </div>
+                      {/* Description */}
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">
-                          {editingProduct ? 'Thay đổi ảnh/video (Để trống nếu giữ cũ)' : 'Ảnh hoặc Video sản phẩm'}
-                        </label>
-                        <input type="file" required={!editingProduct} accept="image/*,video/*"
-                          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                          className="w-full bg-[#F8F9FA] border border-[#E9ECEF] rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all font-medium file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100" />
-                        {selectedFile && <p className="text-[10px] font-bold text-blue-600 mt-1">Đã chọn: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>}
-                        {editingProduct && !selectedFile && <p className="text-[10px] font-bold text-gray-400 mt-1">Đang sử dụng: {editingProduct?.image?.split('/').pop()?.slice(-20) || 'Chưa có ảnh'}</p>}
+                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Mô tả sản phẩm</label>
+                        <textarea rows={3} value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))}
+                          placeholder="Mô tả chi tiết về sản phẩm..."
+                          className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 transition-all resize-none" />
                       </div>
-                      <div className="flex gap-4 pt-4">
-                        <button type="button" onClick={() => { setShowAddProduct(false); setEditingProduct(null); setNewProduct({ name: '', price: '', category: 'Thực phẩm' }); setSelectedFile(null); }}
-                          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-4 rounded-2xl transition-all">Hủy</button>
+                      {/* Actions */}
+                      <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={resetProductForm} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-2xl transition-all text-sm">Hủy</button>
                         <button type="submit" disabled={loading}
-                          className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                          {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-                          {editingProduct ? 'Cập nhật' : 'Lưu sản phẩm'}
+                          className="flex-[2] py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] text-sm">
+                          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                          {editingProduct ? 'Lưu thay đổi' : 'Đăng sản phẩm'}
                         </button>
                       </div>
                     </form>
@@ -1058,378 +1089,609 @@ export default function App() {
               )}
             </AnimatePresence>
           </motion.main>
+        )}
 
-        ) : activeTab === 'my-orders' ? (
-          <motion.main key="my-orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="max-w-7xl mx-auto p-6 space-y-8">
-            <div className="flex justify-between items-end">
+        {/* ████████████████████  SELLER: ORDERS  █████████████████████ */}
+        {activeTab === 'my-orders' && (
+          <motion.main key="my-orders" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-3xl font-black tracking-tight">Đơn hàng nhận được</h2>
-                <p className="text-gray-500 font-medium">Quản lý và xác nhận đơn hàng từ người mua</p>
+                <h1 className="text-2xl font-black tracking-tight">Quản lý đơn hàng</h1>
+                <p className="text-gray-500 text-sm">Xác nhận & cập nhật trạng thái đơn hàng</p>
               </div>
-              <button onClick={fetchOrders}
-                className="px-5 py-2.5 bg-white border border-[#E9ECEF] rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
-                <Clock className="w-4 h-4" /> Làm mới
+              <button onClick={fetchOrders} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors shadow-sm">
+                <RefreshCw className="w-4 h-4" /> Làm mới
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-blue-600 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-blue-600/30 relative overflow-hidden">
-                <div className="relative z-10">
-                  <p className="text-blue-100 font-bold uppercase tracking-widest text-xs mb-2">Tổng doanh thu</p>
-                  <h3 className="text-5xl font-black">{formatPrice(totalRevenue)}</h3>
+            {/* Stats row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Tổng doanh thu', value: formatPrice(totalRevenue), icon: DollarSign, color: 'bg-blue-600', textColor: 'text-white' },
+                { label: 'Hôm nay', value: formatPrice(todayRevenue), icon: TrendingUp, color: 'bg-emerald-500', textColor: 'text-white' },
+                { label: 'Tổng đơn hàng', value: orders.length.toString(), icon: ShoppingBag, color: 'bg-white border border-gray-100', textColor: 'text-gray-900' },
+                { label: 'Chờ xác nhận', value: orders.filter(o => o.status === 'Chờ xác nhận').length.toString(), icon: Clock, color: 'bg-amber-50 border border-amber-100', textColor: 'text-amber-700' },
+              ].map(({ label, value, icon: Icon, color, textColor }) => (
+                <div key={label} className={`${color} rounded-2xl p-5 shadow-sm`}>
+                  <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${color.includes('blue') || color.includes('emerald') ? 'text-white/70' : 'text-gray-400'}`}>{label}</p>
+                  <p className={`text-2xl font-black ${textColor}`}>{value}</p>
+                  <Icon className={`w-5 h-5 mt-2 ${color.includes('blue') || color.includes('emerald') ? 'text-white/40' : 'text-gray-300'}`} />
                 </div>
-                <DollarSign className="absolute -right-6 -bottom-6 w-40 h-40 text-blue-500 opacity-20" />
-              </div>
-              <div className="bg-white rounded-[2.5rem] p-10 border border-[#E9ECEF] shadow-sm flex flex-col justify-center">
-                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Đơn hàng đã nhận</p>
-                <h3 className="text-5xl font-black text-gray-900">{orders.length}</h3>
-              </div>
-              <div className="bg-white rounded-[2.5rem] p-10 border border-[#E9ECEF] shadow-sm flex flex-col justify-center">
-                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2">Chờ xác nhận</p>
-                <h3 className="text-5xl font-black text-yellow-600">{orders.filter(o => o.status === 'Chờ xác nhận').length}</h3>
-              </div>
+              ))}
             </div>
 
-            <div className="bg-white rounded-[2.5rem] border border-[#E9ECEF] overflow-hidden shadow-sm">
-              <div className="px-8 py-6 border-b border-[#E9ECEF] bg-gray-50/30 flex justify-between items-center">
-                <h4 className="font-black text-lg">Lịch sử giao dịch</h4>
-                <span className="text-xs text-gray-400 font-bold">* Người mua sẽ nhận thông báo khi bạn xác nhận</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#E9ECEF] bg-gray-50/10">
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Mã đơn</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Thời gian</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Chi tiết</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-right">Trạng thái & Hành động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E9ECEF]">
-                    {reportsLoading ? (
-                      <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-600" />
-                        <p className="font-bold">Đang tải đơn hàng...</p>
-                      </td></tr>
-                    ) : orders.length === 0 ? (
-                      <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">
-                        <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Clock className="w-8 h-8 opacity-20" /></div>
-                        <p className="font-bold text-gray-900">Chưa có đơn hàng nào</p>
-                        <p className="text-sm">Các đơn hàng khách đặt sẽ xuất hiện tại đây</p>
-                      </td></tr>
-                    ) : (
-                      (orders || []).map((order) => {
-                        const cfg = statusConfig[order.status] || { color: 'bg-gray-100 text-gray-600', label: order.status };
-                        return (
-                          <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
-                            <td className="px-8 py-6">
-                              <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8) || 'N/A'}</span>
-                            </td>
-                            <td className="px-8 py-6">
-                              <p className="text-sm font-bold text-gray-900">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
-                              <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleTimeString('vi-VN')}</p>
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
-                                  <span key={idx} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{item.name} x{item.quantity}</span>
-                                ))}
-                              </div>
-                              <p className="text-sm font-black text-blue-600">{formatPrice(order.total_price)}</p>
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="flex flex-col items-end gap-2">
-                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${cfg.color}`}>{cfg.label}</span>
-                                {cfg.next && (
-                                  <button onClick={() => updateOrderStatus(order, cfg.next!)}
-                                    className={`text-[10px] font-black text-white px-4 py-2 rounded-xl transition-colors ${cfg.nextColor}`}>
-                                    {cfg.nextLabel}
-                                    {cfg.next === 'Đã xác nhận' && <span className="ml-1">→ Gửi thông báo</span>}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </motion.main>
-
-        ) : activeTab === 'my-purchases' ? (
-          <motion.main key="my-purchases" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="max-w-7xl mx-auto p-6 space-y-8">
-            <div className="flex justify-between items-end">
-              <div>
-                <h2 className="text-3xl font-black tracking-tight">Đơn hàng của tôi</h2>
-                <p className="text-gray-500 font-medium">Theo dõi trạng thái các đơn hàng bạn đã đặt</p>
-              </div>
-              <button onClick={fetchBuyerOrders}
-                className="px-5 py-2.5 bg-white border border-[#E9ECEF] rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
-                <Clock className="w-4 h-4" /> Làm mới
-              </button>
-            </div>
-
-            {reportsLoading ? (
-              <div className="h-64 flex flex-col items-center justify-center gap-3 text-gray-400">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                <p className="font-medium">Đang tải đơn hàng...</p>
-              </div>
-            ) : myBuyerOrders.length === 0 ? (
-              <div className="h-96 flex flex-col items-center justify-center bg-white rounded-[2rem] border border-[#E9ECEF] gap-4 text-gray-400">
-                <div className="bg-gray-50 p-8 rounded-full"><ShoppingBag className="w-16 h-16 opacity-10" /></div>
-                <p className="text-xl font-bold text-gray-900">Chưa có đơn hàng nào</p>
-                <p className="text-sm font-medium">Hãy khám phá chợ chung và đặt hàng ngay!</p>
-                <button onClick={() => setActiveTab('marketplace')} className="mt-2 text-blue-600 font-bold hover:underline">Đi mua sắm →</button>
+            {/* Orders */}
+            {ordersLoading ? (
+              <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /><span className="text-gray-500 font-medium">Đang tải...</span></div>
+            ) : orders.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+                <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="font-bold text-gray-500">Chưa có đơn hàng nào</p>
+                <p className="text-gray-400 text-sm">Đơn hàng từ khách sẽ hiển thị tại đây</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {myBuyerOrders.map(order => {
-                  const cfg = statusConfig[order.status] || { color: 'bg-gray-100 text-gray-600', label: order.status };
+              <div className="space-y-3">
+                {orders.map(order => {
+                  const cfg = ORDER_STATUSES[order.status as keyof typeof ORDER_STATUSES] || ORDER_STATUSES['Chờ xác nhận'];
                   return (
-                    <motion.div key={order.id} layout
-                      className="bg-white rounded-[2rem] border border-[#E9ECEF] p-8 shadow-sm">
-                      <div className="flex justify-between items-start flex-wrap gap-4">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{order?.id?.toString()?.slice(-8)}</span>
-                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${cfg.color}`}>{cfg.label}</span>
+                    <div key={order.id} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all">
+                      <div className="flex flex-wrap items-start gap-4 justify-between">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 bg-gray-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+                            <ShoppingBag className="w-5 h-5 text-gray-500" />
                           </div>
-                          <p className="text-sm text-gray-400">{new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">#{String(order.id).slice(-8)}</span>
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${cfg.color}`}>{cfg.label}</span>
+                            </div>
+                            <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                            {order.buyer_email && <p className="text-xs text-gray-500 mt-0.5">👤 {order.buyer_email}</p>}
+                          </div>
                         </div>
-                        <p className="text-2xl font-black text-blue-600">{formatPrice(order.total_price)}</p>
+                        <div className="text-right">
+                          <p className="font-black text-blue-600 text-lg">{formatPrice(order.total_price)}</p>
+                          {order.discount_amount && order.discount_amount > 0 && <p className="text-xs text-emerald-600">-{formatPrice(order.discount_amount)} giảm giá</p>}
+                        </div>
                       </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
+
+                      {/* Items */}
+                      <div className="mt-3 flex flex-wrap gap-1.5">
                         {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
-                          <span key={idx} className="text-sm font-bold bg-[#F8F9FA] border border-[#E9ECEF] text-gray-700 px-4 py-2 rounded-2xl">
-                            {item.name} <span className="text-gray-400">x{item.quantity}</span>
-                          </span>
+                          <span key={idx} className="text-[11px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">{item.name} ×{item.quantity}</span>
                         ))}
                       </div>
-                      <div className="mt-6 flex items-center gap-2">
-                        {['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'].map((step, idx) => {
-                          const steps = ['Chờ xác nhận', 'Đã xác nhận', 'Đang giao', 'Hoàn thành'];
-                          const currentIdx = steps.indexOf(order.status);
-                          const isDone = idx <= currentIdx;
-                          return (
-                            <React.Fragment key={step}>
-                              <div className={`flex flex-col items-center gap-1`}>
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${isDone ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                                  {isDone ? <Check className="w-4 h-4" /> : idx + 1}
-                                </div>
-                                <span className={`text-[9px] font-bold whitespace-nowrap ${isDone ? 'text-blue-600' : 'text-gray-400'}`}>{step}</span>
-                              </div>
-                              {idx < 3 && <div className={`flex-1 h-0.5 ${idx < currentIdx ? 'bg-blue-600' : 'bg-gray-200'} mb-4`} />}
-                            </React.Fragment>
-                          );
-                        })}
+
+                      {/* Shipping & Note */}
+                      {(order.shipping_address || order.note) && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-1">
+                          {order.shipping_address && <p className="text-xs text-gray-600 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />{order.shipping_address}</p>}
+                          {order.note && <p className="text-xs text-gray-600 flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />{order.note}</p>}
+                          {order.payment_method && <p className="text-xs text-gray-500">💳 Thanh toán: {order.payment_method === 'cod' ? 'Tiền mặt khi nhận' : order.payment_method === 'bank' ? 'Chuyển khoản' : 'MoMo'}</p>}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {cfg.next && (
+                          <button onClick={() => updateOrderStatus(order, cfg.next!)}
+                            className={`flex-1 min-w-[120px] ${cfg.nextBg} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.98]`}>
+                            {cfg.nextLabel} → Thông báo người mua
+                          </button>
+                        )}
+                        {order.status === 'Chờ xác nhận' && (
+                          <button onClick={() => cancelOrder(order)} className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition-colors">Từ chối</button>
+                        )}
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })}
               </div>
             )}
           </motion.main>
+        )}
 
-        ) : (
-          <motion.main key="marketplace" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="flex h-[calc(100vh-80px)]">
-            <section className="w-full p-8 overflow-y-auto">
-              <div className="max-w-4xl mx-auto space-y-10">
-                <div className="flex flex-col gap-6">
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <h2 className="text-4xl font-black tracking-tight mb-2">
-                        {showExcluded ? 'Sản phẩm đã loại bỏ' : 'Khám phá Chợ chung'}
-                      </h2>
-                      <p className="text-gray-500 font-medium">
-                        {showExcluded ? 'Quản lý các sản phẩm bạn đã ẩn' : 'Tìm kiếm những sản phẩm tốt nhất từ cộng đồng'}
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => setShowExcluded(!showExcluded)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${showExcluded ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        {showExcluded ? 'Quay lại Chợ chung' : 'Xem SP đã loại bỏ'}
-                      </button>
-                      <button className="p-3 bg-white border border-[#E9ECEF] rounded-2xl hover:bg-gray-50 transition-all shadow-sm">
-                        <Filter className="w-5 h-5 text-gray-400" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input type="text" placeholder="Tìm kiếm sản phẩm, người bán..."
-                      className="w-full bg-white border border-[#E9ECEF] rounded-[2rem] py-5 pl-14 pr-6 focus:outline-none focus:ring-4 focus:ring-blue-600/5 transition-all font-medium shadow-sm" />
-                  </div>
-                </div>
+        {/* ██████████████████  BUYER: MARKETPLACE  ██████████████████ */}
+        {activeTab === 'marketplace' && (
+          <motion.main key="marketplace" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
+            {/* Hero Search */}
+            <div className="relative">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Tìm kiếm sản phẩm, thương hiệu, danh mục..."
+                className="w-full bg-white border border-gray-200 rounded-3xl py-4 pl-14 pr-14 text-sm focus:outline-none focus:ring-4 focus:ring-blue-600/5 transition-all shadow-sm" />
+              <button onClick={() => setShowFilters(!showFilters)}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-2xl transition-all ${showFilters ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+            </div>
 
-                <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-                  {['Tất cả', 'Thực phẩm', 'Đồ uống', 'Thời trang', 'Điện tử', 'Gia dụng'].map((cat) => (
-                    <button key={cat}
-                      className={`px-6 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all ${cat === 'Tất cả' ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20' : 'bg-white border border-[#E9ECEF] text-gray-500 hover:border-gray-300'}`}>
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-
-                {loading ? (
-                  <div className="h-64 flex flex-col items-center justify-center text-gray-400 gap-3">
-                    <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-                    <p className="font-bold">Đang tìm kiếm sản phẩm...</p>
-                  </div>
-                ) : processedProducts.length === 0 ? (
-                  <div className="h-96 flex flex-col items-center justify-center text-gray-400 gap-4 bg-white rounded-[3rem] border border-[#E9ECEF]">
-                    <Search className="w-16 h-16 opacity-10" />
-                    <p className="text-xl font-bold text-gray-900">Không tìm thấy sản phẩm nào</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {processedProducts.map((product) => {
-                      const pref = preferences.find(p => p.product_id === product.id);
-                      return (
-                        <motion.div key={product.id} whileHover={{ y: -8 }}
-                          className={`bg-white rounded-[2.5rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all group ${pref?.is_priority ? 'border-yellow-400 ring-2 ring-yellow-400/20' : 'border-[#E9ECEF]'}`}>
-                          <div className="h-64 overflow-hidden relative">
-                            {isVideo(product.image) ? (
-                              <video src={product.image} controls className="w-full h-full object-cover" />
-                            ) : (
-                              <img src={product.image || 'https://picsum.photos/seed/placeholder/400/300'} alt={product.name}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
-                            )}
-                            
-                            {/* Priority and Exclusion Controls */}
-                            <div className="absolute top-5 right-5 flex flex-col gap-2">
-                              <button 
-                                onClick={() => togglePreference(product.id, 'is_priority')}
-                                className={`p-3 rounded-2xl transition-all shadow-lg ${pref?.is_priority ? 'bg-yellow-400 text-white scale-110' : 'bg-white/90 text-gray-400 hover:text-yellow-500'}`}
-                                title="Ưu tiên sản phẩm này"
-                              >
-                                <Star className={`w-5 h-5 ${pref?.is_priority ? 'fill-current' : ''}`} />
-                              </button>
-                              <button 
-                                onClick={() => togglePreference(product.id, 'is_excluded')}
-                                className={`p-3 rounded-2xl transition-all shadow-lg ${pref?.is_excluded ? 'bg-red-500 text-white scale-110' : 'bg-white/90 text-gray-400 hover:text-red-500'}`}
-                                title="Loại bỏ khỏi danh sách"
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
-                            </div>
-
-                            <div className="absolute top-5 left-5 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">
-                              {product.category} {pref?.is_priority && '⭐'}
-                            </div>
-                          </div>
-                          <div className="p-8">
-                            <div className="flex justify-between items-start mb-4">
-                              <div>
-                                <h3 className="font-black text-2xl mb-1 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-                                <div className="flex items-center gap-2 text-gray-400">
-                                  <Store className="w-3 h-3" />
-                                  <span className="text-xs font-bold uppercase tracking-wider">Seller ID: {product?.seller_id?.slice(0, 8) || 'Unknown'}...</span>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-blue-600 font-black text-2xl">{formatPrice(product.price)}</p>
-                              </div>
-                            </div>
-                            <button onClick={() => addToCart(product)}
-                              className="w-full bg-gray-900 hover:bg-blue-600 text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 hover:shadow-blue-600/20">
-                              <Plus className="w-6 h-6" /> Thêm vào giỏ hàng
-                            </button>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
-
+            {/* Filter Panel */}
             <AnimatePresence>
-              {showCart && (
-                <div className="fixed inset-0 z-[60] flex justify-end">
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    onClick={() => setShowCart(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-                  <motion.section initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
-                    <div className="p-8 border-b border-[#E9ECEF] flex justify-between items-center bg-white sticky top-0 z-10">
-                      <h2 className="text-2xl font-black flex items-center gap-3">
-                        <ShoppingCart className="w-6 h-6 text-blue-600" /> Giỏ hàng
-                      </h2>
-                      <button onClick={() => setShowCart(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                        <Trash2 className="w-5 h-5 text-gray-400" />
-                      </button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                      <AnimatePresence mode="popLayout">
-                        {(cart || []).length === 0 ? (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4">
-                            <div className="bg-gray-50 p-10 rounded-[2.5rem]"><ShoppingBag className="w-16 h-16 opacity-10" /></div>
-                            <div className="text-center">
-                              <p className="text-lg font-bold text-gray-900">Giỏ hàng trống</p>
-                              <p className="text-sm font-medium">Hãy chọn những món đồ bạn yêu thích</p>
-                            </div>
-                          </motion.div>
-                        ) : (
-                          (cart || []).map((item) => (
-                            <motion.div key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                              className="flex items-center gap-5 p-5 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] relative group">
-                              <img src={item.image} alt={item.name} className="w-20 h-20 rounded-2xl object-cover shadow-sm" referrerPolicy="no-referrer" />
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-black text-base truncate">{item.name}</h4>
-                                <p className="text-blue-600 font-black text-sm mb-2">{formatPrice(item.price)}</p>
-                                <div className="flex items-center gap-4 bg-white border border-[#E9ECEF] rounded-xl p-1 w-fit shadow-sm">
-                                  <button onClick={() => updateQuantity(item.id, -1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><Minus className="w-3 h-3" /></button>
-                                  <span className="font-black text-sm min-w-[20px] text-center">{item.quantity}</span>
-                                  <button onClick={() => updateQuantity(item.id, 1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><Plus className="w-3 h-3" /></button>
-                                </div>
-                              </div>
-                              <button onClick={() => removeFromCart(item.id)}
-                                className="p-3 text-gray-300 hover:text-red-500 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100">
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </motion.div>
-                          ))
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    <div className="p-8 bg-[#F8F9FA] border-t border-[#E9ECEF] space-y-6">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                          <span>Tạm tính</span><span>{formatPrice(total)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-gray-400 font-bold text-xs uppercase tracking-widest">
-                          <span>Phí vận chuyển</span><span className="text-green-500">Miễn phí</span>
-                        </div>
-                        <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
-                          <span className="font-black text-lg">Tổng cộng</span>
-                          <span className="font-black text-blue-600 text-3xl">{formatPrice(total)}</span>
-                        </div>
+              {showFilters && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm overflow-hidden">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div>
+                      <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3">Sắp xếp theo</p>
+                      <div className="space-y-1.5">
+                        {[
+                          { v: 'newest', l: '🕐 Mới nhất' }, { v: 'popular', l: '🔥 Phổ biến nhất' },
+                          { v: 'price_asc', l: '💰 Giá thấp → cao' }, { v: 'price_desc', l: '💎 Giá cao → thấp' },
+                          { v: 'rating', l: '⭐ Đánh giá cao nhất' },
+                        ].map(({ v, l }) => (
+                          <button key={v} onClick={() => setSortBy(v as any)}
+                            className={`w-full text-left text-sm font-medium px-3 py-2 rounded-xl transition-all ${sortBy === v ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+                        ))}
                       </div>
-                      <button onClick={handleCheckout} disabled={cart.length === 0 || loading}
-                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-black py-5 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
-                        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <ChevronRight className="w-6 h-6" />}
-                        {loading ? 'Đang xử lý...' : 'Đặt hàng ngay'}
-                      </button>
                     </div>
-                  </motion.section>
-                </div>
+                    <div>
+                      <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3">Khoảng giá</p>
+                      <div className="space-y-2">
+                        {[[0, 100000], [100000, 500000], [500000, 1000000], [1000000, 5000000], [5000000, 10000000]].map(([min, max]) => (
+                          <button key={`${min}-${max}`} onClick={() => setPriceRange([min, max])}
+                            className={`w-full text-left text-sm px-3 py-2 rounded-xl transition-all ${priceRange[0] === min && priceRange[1] === max ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-600 hover:bg-gray-50 font-medium'}`}>
+                            {min === 0 ? `Dưới ${formatPrice(max)}` : `${formatPrice(min)} – ${formatPrice(max)}`}
+                          </button>
+                        ))}
+                        <button onClick={() => setPriceRange([0, 10000000])} className="text-xs text-gray-400 hover:text-gray-600 font-medium underline">Xóa bộ lọc giá</button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3">Hiển thị</p>
+                      <div className="flex gap-2">
+                        {[{ v: 'grid', l: 'Lưới', icon: Grid3X3 }, { v: 'list', l: 'Danh sách', icon: List }].map(({ v, l, icon: Icon }) => (
+                          <button key={v} onClick={() => setViewMode(v as 'grid' | 'list')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-bold transition-all ${viewMode === v ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                            <Icon className="w-4 h-4" />{l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Categories horizontal scroll */}
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+              {CATEGORIES.map(cat => (
+                <button key={cat.id} onClick={() => { setSelectedCategory(cat.id); setSelectedSubcat(''); }}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0 ${selectedCategory === cat.id ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  <span>{cat.icon}</span>{cat.label}
+                  {selectedCategory === cat.id && cat.sub.length > 0 && <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              ))}
+            </div>
+
+            {/* Subcategory */}
+            <AnimatePresence>
+              {selectedCategory !== 'all' && CATEGORIES.find(c => c.id === selectedCategory)?.sub.length && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  <button onClick={() => setSelectedSubcat('')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${!selectedSubcat ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-500'}`}>Tất cả</button>
+                  {CATEGORIES.find(c => c.id === selectedCategory)?.sub.map(sub => (
+                    <button key={sub} onClick={() => setSelectedSubcat(sub)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${selectedSubcat === sub ? 'bg-blue-100 text-blue-600' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'}`}>{sub}</button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Result count */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500 font-medium">
+                {loading ? 'Đang tải...' : `${filteredProducts.length} sản phẩm`}
+                {searchQuery && <span className="text-blue-600 font-bold"> cho "{searchQuery}"</span>}
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setViewMode('grid')} className={`p-2 rounded-xl border transition-all ${viewMode === 'grid' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><Grid3X3 className="w-4 h-4" /></button>
+                <button onClick={() => setViewMode('list')} className={`p-2 rounded-xl border transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500'}`}><List className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /><span className="text-gray-400 font-medium">Đang tải sản phẩm...</span></div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+                <Search className="w-14 h-14 text-gray-200 mx-auto mb-4" />
+                <p className="text-lg font-bold text-gray-600">Không tìm thấy sản phẩm nào</p>
+                <p className="text-gray-400 text-sm mt-1">Thử thay đổi từ khóa hoặc bộ lọc</p>
+                <button onClick={() => { setSearchQuery(''); setSelectedCategory('all'); setSelectedSubcat(''); setPriceRange([0, 10000000]); }}
+                  className="mt-4 text-blue-600 font-bold text-sm hover:underline">Xóa bộ lọc</button>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filteredProducts.map(p => (
+                  <ProductCard key={p.id} product={p}
+                    onAddToCart={addToCart} onView={setViewProduct}
+                    wishlisted={wishlist.includes(p.id)}
+                    onWishlist={id => setWishlist(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id])} />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredProducts.map(p => (
+                  <div key={p.id} className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4 hover:shadow-md transition-all cursor-pointer" onClick={() => setViewProduct(p)}>
+                    <div className="w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0">
+                      <img src={p.image || `https://picsum.photos/seed/${p.id}/200`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm mb-1 line-clamp-2">{p.name}</p>
+                      {p.rating && <Stars value={p.rating} />}
+                      {p.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{p.description}</p>}
+                      {p.tags?.length && <div className="flex gap-1 mt-1.5">{p.tags.slice(0, 3).map(t => <span key={t} className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">#{t}</span>)}</div>}
+                    </div>
+                    <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
+                      <div>
+                        <p className="font-black text-blue-600">{formatPrice(p.price)}</p>
+                        {p.original_price && <p className="text-xs text-gray-400 line-through">{formatPrice(p.original_price)}</p>}
+                      </div>
+                      <button onClick={e => { e.stopPropagation(); addToCart(p); }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all">Thêm</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.main>
+        )}
+
+        {/* ████████████████  BUYER: MY PURCHASES  ████████████████ */}
+        {activeTab === 'my-purchases' && (
+          <motion.main key="my-purchases" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-black">Đơn hàng của tôi</h1>
+                <p className="text-gray-500 text-sm">Theo dõi và quản lý đơn hàng</p>
+              </div>
+              <button onClick={fetchBuyerOrders} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-2xl text-sm font-bold hover:bg-gray-50 transition-colors shadow-sm">
+                <RefreshCw className="w-4 h-4" /> Làm mới
+              </button>
+            </div>
+
+            {ordersLoading ? (
+              <div className="flex items-center justify-center h-48 gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+            ) : buyerOrders.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+                <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="font-bold text-gray-600">Chưa có đơn hàng nào</p>
+                <button onClick={() => setActiveTab('marketplace')} className="mt-3 text-blue-600 font-bold text-sm hover:underline">Bắt đầu mua sắm →</button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {buyerOrders.map(order => {
+                  const cfg = ORDER_STATUSES[order.status as keyof typeof ORDER_STATUSES] || ORDER_STATUSES['Chờ xác nhận'];
+                  const currentStep = PROGRESS_STEPS.indexOf(order.status);
+                  return (
+                    <div key={order.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">#{String(order.id).slice(-8)}</span>
+                          <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${cfg.color}`}>{cfg.label}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-blue-600">{formatPrice(order.total_price)}</p>
+                          <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
+                        </div>
+                      </div>
+                      {/* Items */}
+                      <div className="px-6 py-4 flex flex-wrap gap-2">
+                        {Array.isArray(order.items) && order.items.map((item: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                            <span className="text-sm font-bold text-gray-800">{item.name}</span>
+                            <span className="text-xs text-gray-400">×{item.quantity}</span>
+                            <span className="text-xs font-bold text-blue-600">{formatPrice(item.price * item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Order info */}
+                      {(order.shipping_address || order.payment_method) && (
+                        <div className="px-6 pb-4 flex flex-wrap gap-4 text-xs text-gray-500">
+                          {order.shipping_address && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{order.shipping_address}</span>}
+                          {order.payment_method && <span className="flex items-center gap-1">💳 {order.payment_method === 'cod' ? 'COD' : order.payment_method === 'bank' ? 'Chuyển khoản' : 'MoMo'}</span>}
+                          {order.discount_amount && order.discount_amount > 0 && <span className="text-emerald-600 font-bold">Tiết kiệm {formatPrice(order.discount_amount)}</span>}
+                        </div>
+                      )}
+                      {/* Progress bar */}
+                      {order.status !== 'Đã hủy' && (
+                        <div className="px-6 pb-6">
+                          <div className="flex items-center">
+                            {PROGRESS_STEPS.map((step, idx) => {
+                              const done = idx <= currentStep;
+                              const active = idx === currentStep;
+                              return (
+                                <React.Fragment key={step}>
+                                  <div className="flex flex-col items-center gap-1.5">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${done ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-gray-100 text-gray-400'} ${active ? 'ring-4 ring-blue-100' : ''}`}>
+                                      {done ? <Check className="w-4 h-4" /> : idx + 1}
+                                    </div>
+                                    <span className={`text-[9px] font-black text-center whitespace-nowrap ${done ? 'text-blue-600' : 'text-gray-400'}`} style={{ maxWidth: '60px' }}>{step}</span>
+                                  </div>
+                                  {idx < PROGRESS_STEPS.length - 1 && (
+                                    <div className={`flex-1 h-1 mx-1 rounded-full mb-5 transition-all ${idx < currentStep ? 'bg-blue-600' : 'bg-gray-100'}`} />
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {order.status === 'Đã hủy' && (
+                        <div className="mx-6 mb-5 p-3 bg-red-50 rounded-2xl text-red-600 text-sm font-medium text-center border border-red-100">❌ Đơn hàng đã bị hủy</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.main>
+        )}
+
+        {/* ████████████████  BUYER: WISHLIST  ████████████████ */}
+        {activeTab === 'wishlist-tab' && (
+          <motion.main key="wishlist-tab" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-7xl mx-auto p-6 space-y-6">
+            <div>
+              <h1 className="text-2xl font-black">Sản phẩm yêu thích</h1>
+              <p className="text-gray-500 text-sm">{wishlist.length} sản phẩm đã lưu</p>
+            </div>
+            {wishlist.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+                <Heart className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="font-bold text-gray-600">Chưa có sản phẩm yêu thích</p>
+                <button onClick={() => setActiveTab('marketplace')} className="mt-3 text-blue-600 font-bold text-sm hover:underline">Khám phá ngay →</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {allProducts.filter(p => wishlist.includes(p.id)).map(p => (
+                  <ProductCard key={p.id} product={p} onAddToCart={addToCart} onView={setViewProduct}
+                    wishlisted={true} onWishlist={id => setWishlist(w => w.filter(x => x !== id))} />
+                ))}
+              </div>
+            )}
           </motion.main>
         )}
       </AnimatePresence>
+
+      {/* ══════════════════════ CART SIDEBAR ══════════════════════ */}
+      <AnimatePresence>
+        {showCart && (
+          <div className="fixed inset-0 z-[70] flex justify-end">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setShowCart(false); setCheckoutStep('cart'); }} />
+            <motion.section initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
+
+              {/* Cart Header */}
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  {checkoutStep !== 'cart' && (
+                    <button onClick={() => setCheckoutStep('cart')} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5" /></button>
+                  )}
+                  <h2 className="text-lg font-black flex items-center gap-2">
+                    <ShoppingCart className="w-5 h-5 text-blue-600" />
+                    {checkoutStep === 'cart' ? `Giỏ hàng (${cart.length})` : checkoutStep === 'address' ? 'Địa chỉ giao hàng' : checkoutStep === 'payment' ? 'Thanh toán' : 'Xác nhận đơn'}
+                  </h2>
+                </div>
+                <button onClick={() => { setShowCart(false); setCheckoutStep('cart'); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
+              </div>
+
+              {/* Steps indicator */}
+              <div className="flex px-5 py-3 border-b border-gray-50 gap-1">
+                {['cart', 'address', 'payment', 'confirm'].map((step, idx) => (
+                  <div key={step} className={`flex-1 h-1 rounded-full transition-all ${['cart', 'address', 'payment', 'confirm'].indexOf(checkoutStep) >= idx ? 'bg-blue-600' : 'bg-gray-100'}`} />
+                ))}
+              </div>
+
+              {/* ── Step: Cart ── */}
+              {checkoutStep === 'cart' && (
+                <>
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                    <AnimatePresence>
+                      {cart.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center gap-4 py-20 text-gray-300">
+                          <ShoppingBag className="w-16 h-16" />
+                          <p className="font-bold text-gray-500">Giỏ hàng trống</p>
+                          <button onClick={() => { setShowCart(false); setActiveTab('marketplace'); }} className="text-blue-600 text-sm font-bold hover:underline">Khám phá sản phẩm →</button>
+                        </div>
+                      ) : cart.map(item => (
+                        <motion.div key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                          className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3 group">
+                          <div className="w-16 h-16 rounded-xl overflow-hidden bg-white border border-gray-100 flex-shrink-0">
+                            <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-sm truncate">{item.name}</p>
+                            <p className="text-blue-600 font-black text-sm">{formatPrice(item.price)}</p>
+                            {item.note && <p className="text-xs text-gray-400 italic truncate">"{item.note}"</p>}
+                            <div className="flex items-center gap-2 mt-2 bg-white border border-gray-200 rounded-xl p-1 w-fit">
+                              <button onClick={() => updateQty(item.id, -1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Minus className="w-3 h-3" /></button>
+                              <span className="font-black text-sm w-6 text-center">{item.quantity}</span>
+                              <button onClick={() => updateQty(item.id, 1)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><Plus className="w-3 h-3" /></button>
+                            </div>
+                          </div>
+                          <button onClick={() => removeFromCart(item.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-white rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                  {cart.length > 0 && (
+                    <div className="p-5 border-t border-gray-100 space-y-4 bg-white">
+                      {/* Coupon */}
+                      <div className="flex gap-2">
+                        <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                          placeholder="Mã giảm giá (SALE10, WELCOME)"
+                          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20" />
+                        <button onClick={applyCoupon} className="px-4 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-colors"><Tag className="w-4 h-4" /></button>
+                      </div>
+                      {discount > 0 && <p className="text-emerald-600 text-sm font-bold text-center">✓ Đã áp dụng giảm {(discount * 100).toFixed(0)}% — Tiết kiệm {formatPrice(cartTotal * discount)}</p>}
+                      {/* Summary */}
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between text-gray-500"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
+                        {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
+                        <div className="flex justify-between text-gray-500"><span>Phí vận chuyển</span><span className="text-emerald-600 font-bold">Miễn phí</span></div>
+                        <div className="flex justify-between font-black text-base pt-2 border-t border-gray-100"><span>Tổng cộng</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
+                      </div>
+                      <button onClick={() => setCheckoutStep('address')}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
+                        Tiếp tục đặt hàng <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── Step: Address ── */}
+              {checkoutStep === 'address' && (
+                <>
+                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Địa chỉ giao hàng *</label>
+                      <textarea value={shippingAddr} onChange={e => setShippingAddr(e.target.value)} rows={3} required
+                        placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành..."
+                        className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Ghi chú cho đơn hàng</label>
+                      <textarea value={orderNote} onChange={e => setOrderNote(e.target.value)} rows={2}
+                        placeholder="Ghi chú cho người bán: thời gian giao, yêu cầu đặc biệt..."
+                        className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 resize-none" />
+                    </div>
+                  </div>
+                  <div className="p-5 border-t border-gray-100">
+                    <button onClick={() => { if (!shippingAddr.trim()) { showToast('Vui lòng nhập địa chỉ giao hàng', 'error'); return; } setCheckoutStep('payment'); }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
+                      Tiếp tục <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── Step: Payment ── */}
+              {checkoutStep === 'payment' && (
+                <>
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                    <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Phương thức thanh toán</p>
+                    {[
+                      { id: 'cod', icon: '💵', label: 'Tiền mặt khi nhận hàng (COD)', desc: 'Thanh toán khi shipper giao tới' },
+                      { id: 'bank', icon: '🏦', label: 'Chuyển khoản ngân hàng', desc: 'Chuyển khoản trước khi giao hàng' },
+                      { id: 'momo', icon: '📱', label: 'Ví MoMo', desc: 'Thanh toán qua ứng dụng MoMo' },
+                    ].map(({ id, icon, label, desc }) => (
+                      <button key={id} onClick={() => setPaymentMethod(id as any)}
+                        className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${paymentMethod === id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                        <span className="text-2xl">{icon}</span>
+                        <div className="flex-1">
+                          <p className={`font-bold text-sm ${paymentMethod === id ? 'text-blue-700' : 'text-gray-800'}`}>{label}</p>
+                          <p className="text-xs text-gray-400">{desc}</p>
+                        </div>
+                        {paymentMethod === id && <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-5 border-t border-gray-100">
+                    <button onClick={() => setCheckoutStep('confirm')}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all">
+                      Xem lại đơn hàng <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── Step: Confirm ── */}
+              {checkoutStep === 'confirm' && (
+                <>
+                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                    <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                      <p className="font-black text-sm text-gray-700">📦 Sản phẩm</p>
+                      {cart.map(item => (
+                        <div key={item.id} className="flex justify-between items-center">
+                          <span className="text-sm text-gray-700">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
+                          <span className="text-sm font-bold text-blue-600">{formatPrice(item.price * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
+                      <p className="font-black text-sm text-gray-700 mb-3">📋 Thông tin đơn hàng</p>
+                      <div className="text-sm space-y-2">
+                        <div className="flex gap-2"><MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600">{shippingAddr}</span></div>
+                        <div className="flex gap-2"><span className="text-lg leading-none">💳</span><span className="text-gray-600">{paymentMethod === 'cod' ? 'COD - Tiền mặt khi nhận' : paymentMethod === 'bank' ? 'Chuyển khoản ngân hàng' : 'Ví MoMo'}</span></div>
+                        {orderNote && <div className="flex gap-2"><MessageCircle className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /><span className="text-gray-600 italic">{orderNote}</span></div>}
+                      </div>
+                    </div>
+                    <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                      <div className="space-y-1.5 text-sm">
+                        <div className="flex justify-between text-gray-600"><span>Tạm tính</span><span>{formatPrice(cartTotal)}</span></div>
+                        {discount > 0 && <div className="flex justify-between text-emerald-600"><span>Giảm giá</span><span>-{formatPrice(cartTotal * discount)}</span></div>}
+                        <div className="flex justify-between text-gray-600"><span>Phí vận chuyển</span><span className="text-emerald-600 font-bold">Miễn phí</span></div>
+                        <div className="flex justify-between font-black text-base pt-2 border-t border-blue-200 mt-2"><span>Tổng thanh toán</span><span className="text-blue-600 text-xl">{formatPrice(finalTotal)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-5 border-t border-gray-100">
+                    <button onClick={handleCheckout} disabled={loading}
+                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98]">
+                      {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Đang đặt hàng...</> : <><Check className="w-5 h-5" /> Xác nhận đặt hàng {formatPrice(finalTotal)}</>}
+                    </button>
+                    <p className="text-xs text-gray-400 text-center mt-3">Đơn hàng sẽ được gửi cho người bán và chờ xác nhận</p>
+                  </div>
+                </>
+              )}
+            </motion.section>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile bottom nav */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-100 z-20 md:hidden safe-bottom">
+        <div className="flex items-center justify-around py-2">
+          {role === 'buyer' ? (
+            <>
+              {[
+                { id: 'marketplace', icon: Home, label: 'Mua sắm' },
+                { id: 'my-purchases', icon: Package, label: 'Đơn hàng' },
+                { id: 'wishlist-tab', icon: Heart, label: 'Yêu thích' },
+              ].map(({ id, icon: Icon, label }) => (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${activeTab === id ? 'text-blue-600' : 'text-gray-400'}`}>
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[9px] font-bold">{label}</span>
+                </button>
+              ))}
+              <button onClick={() => setShowCart(true)} className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl text-gray-400 relative">
+                <ShoppingCart className="w-5 h-5" />
+                {cart.length > 0 && <span className="absolute top-1.5 right-2.5 bg-blue-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">{cart.length}</span>}
+                <span className="text-[9px] font-bold">Giỏ</span>
+              </button>
+              <button onClick={() => setShowNotifications(true)} className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl text-gray-400 relative">
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && <span className="absolute top-1.5 right-2.5 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{unreadCount}</span>}
+                <span className="text-[9px] font-bold">Thông báo</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {[
+                { id: 'my-products', icon: Store, label: 'Sản phẩm' },
+                { id: 'my-orders', icon: BarChart3, label: 'Đơn hàng' },
+              ].map(({ id, icon: Icon, label }) => (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className={`flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-all ${activeTab === id ? 'text-blue-600' : 'text-gray-400'}`}>
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[9px] font-bold">{label}</span>
+                </button>
+              ))}
+              <button onClick={() => setShowNotifications(true)} className="flex flex-col items-center gap-1 px-6 py-2 rounded-xl text-gray-400 relative">
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && <span className="absolute top-1.5 right-3 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{unreadCount}</span>}
+                <span className="text-[9px] font-bold">Thông báo</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
