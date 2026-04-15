@@ -1,119 +1,149 @@
-import { useState, useEffect, useRef } from 'react';
-import { RealtimeChannel } from '@supabase/supabase-js'; // Import type chuẩn
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Message } from '../types';
-import { useToast } from './useToast'; // Giả định bạn có hook này dựa trên cấu trúc file của bạn
 
-export function useChat(orderId: number | null) {
+interface UseChatParams {
+  orderId?: number | null;
+  productId?: number | null;
+  buyerId?: string;
+  sellerId?: string;
+}
+
+const MESSAGES_PER_PAGE = 20;
+
+export function useChat({ orderId, productId, buyerId, sellerId }: UseChatParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const channelRef = useRef<RealtimeChannel | null>(null); // Sửa type any
-  const { addToast } = useToast(); // Dùng toast để thông báo lỗi
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
+  // Xây dựng query linh hoạt dựa trên bối cảnh Chat
+  const buildQuery = useCallback(() => {
+    let query = supabase.from('messages').select('*');
+    
+    if (orderId) {
+      query = query.eq('order_id', orderId);
+    } else if (productId && buyerId && sellerId) {
+      // Chat tư vấn: lọc tin nhắn giữa 2 người về 1 sản phẩm
+      query = query.eq('product_id', productId)
+        .or(`and(sender_id.eq.${buyerId},receiver_id.eq.${sellerId}),and(sender_id.eq.${sellerId},receiver_id.eq.${buyerId})`);
+    } else {
+      return null;
+    }
+    return query;
+  }, [orderId, productId, buyerId, sellerId]);
+
+  // Tải tin nhắn với phân trang
+  const fetchMessages = useCallback(async (isLoadMore = false) => {
+    const query = buildQuery();
+    if (!query) return;
+
+    if (!isLoadMore) setLoading(true);
+    
+    const from = page * MESSAGES_PER_PAGE;
+    const to = from + MESSAGES_PER_PAGE - 1;
+
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (!error && data) {
+      const formatted = data.map(m => ({ ...m, status: 'sent' as const }));
+      setMessages(prev => isLoadMore ? [...prev, ...formatted] : formatted);
+      setHasMore(data.length === MESSAGES_PER_PAGE);
+    }
+    setLoading(false);
+  }, [buildQuery, page]);
 
   useEffect(() => {
-    if (!orderId) {
-      setMessages([]);
-      return;
+    setPage(0);
+    fetchMessages(false);
+  }, [orderId, productId, fetchMessages]);
+
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      setPage(prev => prev + 1);
+      fetchMessages(true);
     }
+  };
 
-    const fetchMessages = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('order_id', orderId)
-        .order('created_at', { ascending: true });
-      
-      if (error) {
-        addToast?.('error', 'Không thể tải lịch sử tin nhắn');
-      } else {
-        // Đánh dấu các tin nhắn tải về là đã gửi thành công
-        setMessages((data || []).map(m => ({ ...m, status: 'sent' })));
-      }
-      setLoading(false);
-    };
-
-    fetchMessages();
-
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
+  // Đăng ký Realtime (Insert và Update)
+  useEffect(() => {
+    const query = buildQuery();
+    if (!query) return;
 
     const channel = supabase
-      .channel(`chat-room-${orderId}`)
-      .on(
-        'postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages', 
-          filter: `order_id=eq.${orderId}` 
-        }, 
-        (payload) => {
+      .channel(`chat-room-${orderId || productId}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'messages' 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
           const newMsg = payload.new as Message;
-          setMessages((prev) => {
+          setMessages(prev => {
             if (prev.some(m => m.id === newMsg.id)) return prev;
-            
-            // Xóa tin nhắn tạm (optimistic) dựa trên nội dung & sender
-            const filtered = prev.filter(m => !(m.id < 0 && m.content === newMsg.content && m.sender_id === newMsg.sender_id));
-            
-            return [...filtered, { ...newMsg, status: 'sent' }];
+            return [newMsg, ...prev];
           });
+        } 
+        else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as Message;
+          setMessages(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
         }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Đã kết nối Realtime cho đơn hàng:', orderId);
-        }
-      });
+      })
+      .subscribe();
 
     channelRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [buildQuery, orderId, productId]);
 
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
-  }, [orderId]);
+  const markAsRead = async (messageIds: number[]) => {
+    if (messageIds.length === 0) return;
+    await supabase.from('messages').update({ is_read: true }).in('id', messageIds);
+  };
 
   const sendMessage = async (senderId: string, receiverId: string, content: string) => {
-    if (!content.trim() || !orderId) return;
+    if (!content.trim()) return;
     
-    // ID tạm thời sinh từ timestamp (số âm để tránh trùng với DB)
     const tempId = -Date.now();
-    
-    // 🔥 Optimistic Update: Thêm trạng thái 'sending'
     const tempMsg: Message = {
       id: tempId,
-      order_id: orderId,
+      order_id: orderId || null,
+      product_id: productId || null,
       sender_id: senderId,
       receiver_id: receiverId,
       content: content.trim(),
       created_at: new Date().toISOString(),
-      status: 'sending' 
+      is_read: false,
+      status: 'sending'
     };
-    
-    setMessages(prev => [...prev, tempMsg]);
 
-    // Gửi dữ liệu thực tế lên database
+    setMessages(prev => [tempMsg, ...prev]);
+
     const { data, error } = await supabase.from('messages').insert({
-      order_id: orderId,
+      order_id: orderId || null,
+      product_id: productId || null,
       sender_id: senderId,
       receiver_id: receiverId,
-      content: content.trim()
+      content: content.trim(),
+      is_read: false
     }).select().single();
 
     if (error) {
-      console.error('Lỗi khi gửi tin nhắn:', error);
-      addToast?.('error', 'Gửi tin nhắn thất bại. Vui lòng thử lại!');
-      
-      // Chuyển trạng thái tin nhắn thành 'error' để UI hiện nút gửi lại, thay vì xóa mất
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' } : m));
-    } else if (data) {
-       // Cập nhật ID thực từ DB và trạng thái 'sent' (nếu Realtime chậm hơn)
-       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id, status: 'sent' } : m));
+    } else {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id, status: 'sent' } : m));
     }
   };
 
-  return { messages, loading, sendMessage };
+  return { 
+    messages: [...messages].reverse(), 
+    loading, 
+    hasMore, 
+    loadMore, 
+    sendMessage, 
+    markAsRead 
+  };
 }
