@@ -1,530 +1,132 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Zap, Loader2 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Session } from '@supabase/supabase-js';
+import React, { useState } from 'react';
+import { usePOSStore } from './store/posStore';
+// Nạp Icon từ Web
+import { 
+  ShoppingCart, Trash2, Plus, Minus, Search, Receipt, Package 
+} from 'https://esm.sh/lucide-react';
 
-import { supabase } from './lib/supabase';
+const App = () => {
+  const { products, cart, addToCart, removeFromCart, updateQuantity, clearCart } = usePOSStore();
+  const [searchTerm, setSearchTerm] = useState('');
 
-// Types
-import type { Product, Order } from './types';
+  const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const tax = Math.round(subtotal * 0.1); // 10% VAT
+  const total = subtotal + tax;
 
-// Hooks
-import { useToast } from './hooks/useToast';
-import { useCart } from './hooks/useCart';
-import { useWishlist } from './hooks/useWishlist';
-import { useNotifications } from './hooks/useNotifications';
-
-// UI
-import { ToastContainer } from './components/ui';
-import { Navbar, MobileNav } from './components/ui/Navbar';
-
-// Auth
-import { AuthForm, RoleSelection } from './components/auth';
-
-// Product
-import { DislikeModal, ProductDetailModal } from './components/product';
-
-// Notification
-import { NotificationPanel, HiddenProductsPanel } from './components/notification';
-
-// Cart
-import { CartSidebar } from './components/cart';
-
-// Views
-import { SellerProducts } from './views/SellerProducts';
-import { SellerOrders } from './views/SellerOrders';
-import { Marketplace } from './views/Marketplace';
-import { BuyerOrders, Wishlist } from './views/BuyerViews';
-
-type CheckoutStep = 'cart' | 'address' | 'payment' | 'confirm';
-
-export default function App() {
-  // ── Auth ──
-  const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  // ── Data ──
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [myProducts, setMyProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [buyerOrders, setBuyerOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [ordersLoading, setOrdersLoading] = useState(false);
-
-  // ── Navigation ──
-  const [activeTab, setActiveTab] = useState('');
-
-  // ── UI state ──
-  const [showCart, setShowCart] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showHiddenPanel, setShowHiddenPanel] = useState(false);
-  const [viewProduct, setViewProduct] = useState<Product | null>(null);
-  const [pendingDislike, setPendingDislike] = useState<Product | null>(null);
-  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('cart');
-  const [shippingAddr, setShippingAddr] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'bank' | 'momo'>('cod');
-  const [orderNote, setOrderNote] = useState('');
-  const [submittingOrder, setSubmittingOrder] = useState(false);
-
-  // ── Hooks ──
-  const { toasts, showToast } = useToast();
-  const {
-    cart, cartTotal, discountAmt, finalTotal,
-    couponCode, setCouponCode, couponDiscount,
-    addToCart, updateQty, removeFromCart, clearCart,
-    applyCoupon, removeCoupon,
-  } = useCart(showToast);
-
-  const role = useMemo(
-    () => session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined,
-    [session]
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const {
-    wishlist, disliked,
-    toggleWishlist, addDisliked, restoreProduct, restoreAll,
-  } = useWishlist(session?.user?.id, showToast);
-
-  const { notifications, unreadCount, markRead, markAllRead } =
-    useNotifications(session?.user?.id, showToast);
-
-  // ── Derived ──
-  const wishlistProducts = useMemo(
-    () => allProducts.filter(p => wishlist.includes(p.id)),
-    [allProducts, wishlist]
-  );
-
-  const totalRevenue = useMemo(
-    () => orders.reduce((s, o) => s + (Number(o.total_price) || 0), 0),
-    [orders]
-  );
-
-  const todayRevenue = useMemo(() => {
-    const today = new Date().toDateString();
-    return orders
-      .filter(o => new Date(o.created_at).toDateString() === today)
-      .reduce((s, o) => s + Number(o.total_price), 0);
-  }, [orders]);
-
-  // ── Auth init ──
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setAuthLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // ── Default tab ──
-  useEffect(() => {
-    if (role === 'seller') setActiveTab('my-products');
-    else if (role === 'buyer') setActiveTab('marketplace');
-  }, [role]);
-
-  // ── Fetch triggers ──
-  useEffect(() => { if (session) fetchAllProducts(); }, [session]);
-
-  useEffect(() => {
-    if (session && role === 'seller' && activeTab === 'my-products') fetchMyProducts();
-  }, [session, role, activeTab]);
-
-  useEffect(() => {
-    if (activeTab === 'my-orders' && role === 'seller') fetchOrders();
-  }, [activeTab, role]);
-
-  useEffect(() => {
-    if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders();
-  }, [activeTab, role]);
-
-  // ── Data fetchers ──
-  async function fetchAllProducts() {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setAllProducts(data || []);
-    } catch (err: any) {
-      showToast('Lỗi tải sản phẩm: ' + err.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchMyProducts() {
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .eq('seller_id', session!.user.id)
-      .order('created_at', { ascending: false });
-    setMyProducts(data || []);
-  }
-
-  async function fetchOrders() {
-    setOrdersLoading(true);
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('seller_id', session!.user.id)
-      .order('created_at', { ascending: false });
-    setOrders(data || []);
-    setOrdersLoading(false);
-  }
-
-  async function fetchBuyerOrders() {
-    setOrdersLoading(true);
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('buyer_id', session!.user.id)
-      .order('created_at', { ascending: false });
-    setBuyerOrders(data || []);
-    setOrdersLoading(false);
-  }
-
-  // ── Dislike handlers ──
-  const handleDislikeRequest = useCallback((productId: number) => {
-    if (disliked.includes(productId)) {
-      restoreProduct(productId);
-      return;
-    }
-    const product = allProducts.find(p => p.id === productId);
-    if (product) setPendingDislike(product);
-  }, [disliked, allProducts, restoreProduct]);
-
-  const confirmDislike = useCallback(() => {
-    if (!pendingDislike) return;
-    addDisliked(pendingDislike.id);
-    setPendingDislike(null);
-    if (viewProduct?.id === pendingDislike.id) setViewProduct(null);
-  }, [pendingDislike, addDisliked, viewProduct]);
-
-  // ── Wishlist toggle ──
-  const handleWishlist = useCallback((id: number) => {
-    toggleWishlist(id, disliked.includes(id));
-  }, [toggleWishlist, disliked]);
-
-  // ── Order status update ──
-  const updateOrderStatus = async (order: Order, newStatus: string) => {
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', order.id)
-        .eq('seller_id', session!.user.id);
-      if (error) throw error;
-
-      const msgMap: Record<string, string> = {
-        'Đã xác nhận': `✅ Đơn hàng #${String(order.id).slice(-6)} đã được xác nhận!`,
-        'Đang giao':   `🚚 Đơn hàng #${String(order.id).slice(-6)} đang trên đường giao đến bạn!`,
-        'Hoàn thành':  `🎉 Đơn hàng #${String(order.id).slice(-6)} hoàn thành. Cảm ơn bạn!`,
-      };
-      const typeMap: Record<string, any> = {
-        'Đã xác nhận': 'order_confirmed',
-        'Đang giao': 'order_shipped',
-        'Hoàn thành': 'order_completed',
-      };
-      if (msgMap[newStatus] && order.buyer_id) {
-        await supabase.from('notifications').insert([{
-          user_id: order.buyer_id, order_id: order.id,
-          message: msgMap[newStatus], type: typeMap[newStatus], is_read: false,
-        }]);
-      }
-
-      showToast(`✓ Đã cập nhật: ${newStatus}`);
-      fetchOrders();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleCheckout = () => {
+    if (cart.length === 0) return alert("Giỏ hàng đang trống!");
+    alert(`Thanh toán thành công!\nTổng cộng: ${total.toLocaleString()}đ`);
+    clearCart();
   };
 
-  const cancelOrder = async (order: Order) => {
-    if (!confirm('Xác nhận từ chối / huỷ đơn hàng này?')) return;
-    const { error } = await supabase.from('orders').update({ status: 'Đã hủy' }).eq('id', order.id);
-    if (error) { showToast(error.message, 'error'); return; }
-    if (order.buyer_id) {
-      await supabase.from('notifications').insert([{
-        user_id: order.buyer_id, order_id: order.id,
-        message: `❌ Đơn hàng #${String(order.id).slice(-6)} đã bị huỷ.`,
-        type: 'system', is_read: false,
-      }]);
-    }
-    showToast('Đã huỷ đơn hàng', 'info');
-    fetchOrders();
-  };
-
-  // ── Checkout ──
-  const handleCheckout = async () => {
-    if (!cart.length || !session?.user?.id) return;
-    if (!shippingAddr.trim()) {
-      showToast('Vui lòng nhập địa chỉ giao hàng', 'error');
-      setCheckoutStep('address');
-      return;
-    }
-    try {
-      setSubmittingOrder(true);
-      const orderData = {
-        total_price: finalTotal,
-        subtotal: cartTotal,
-        discount_amount: discountAmt,
-        shipping_fee: 0,
-        seller_id: cart[0].seller_id,
-        buyer_id: session.user.id,
-        buyer_email: session.user.email,
-        status: 'Chờ xác nhận',
-        shipping_address: shippingAddr.trim(),
-        payment_method: paymentMethod,
-        note: orderNote.trim() || null,
-        items: cart.map(i => ({
-          id: i.id, name: i.name, price: i.price,
-          quantity: i.quantity, image: i.image, note: i.note || null,
-        })),
-      };
-
-      const { data: order, error } = await supabase.from('orders').insert([orderData]).select().single();
-      if (error) throw error;
-
-      await supabase.from('notifications').insert([{
-        user_id: cart[0].seller_id,
-        order_id: order.id,
-        message: `🛍️ Đơn hàng mới #${String(order.id).slice(-6)} — ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(finalTotal)}`,
-        type: 'new_order',
-        is_read: false,
-      }]);
-
-      clearCart();
-      setShowCart(false);
-      setCheckoutStep('cart');
-      setShippingAddr('');
-      setOrderNote('');
-      setPaymentMethod('cod');
-      showToast('🎉 Đặt hàng thành công! Đang chờ xác nhận...', 'success');
-      setTimeout(() => setActiveTab('my-purchases'), 1500);
-    } catch (err: any) {
-      showToast('Lỗi đặt hàng: ' + err.message, 'error');
-    } finally {
-      setSubmittingOrder(false);
-    }
-  };
-
-  // ── Guards ──
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50 p-6 text-center">
-        <div>
-          <h1 className="text-2xl font-black text-red-900">Thiếu cấu hình Supabase</h1>
-          <p className="text-red-600 mt-2 text-sm">Kiểm tra VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (authLoading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-600/30 animate-pulse">
-          <Zap className="w-7 h-7 text-white" />
-        </div>
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
-      </div>
-    </div>
-  );
-
-  if (!session) return <AuthForm />;
-
-  if (!role) return (
-    <RoleSelection onSelect={() =>
-      supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
-    } />
-  );
-
-  // ══════════════════════════ RENDER ══════════════════════════
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-
-      {/* Toasts */}
-      <ToastContainer toasts={toasts} />
-
-      {/* Panels & Modals */}
-      <AnimatePresence>
-        {showNotifications && (
-          <NotificationPanel
-            notifications={notifications}
-            onClose={() => setShowNotifications(false)}
-            onMarkRead={markRead}
-            onMarkAllRead={() => markAllRead(session!.user.id)}
-          />
-        )}
-        {showHiddenPanel && (
-          <HiddenProductsPanel
-            hiddenIds={disliked}
-            allProducts={allProducts}
-            onRestore={restoreProduct}
-            onClose={() => setShowHiddenPanel(false)}
-          />
-        )}
-        {pendingDislike && (
-          <DislikeModal
-            product={pendingDislike}
-            onConfirm={confirmDislike}
-            onCancel={() => setPendingDislike(null)}
-          />
-        )}
-        {viewProduct && (
-          <ProductDetailModal
-            product={viewProduct}
-            onClose={() => setViewProduct(null)}
-            onAddToCart={(p, qty, note) => addToCart(p, qty, note)}
-            wishlisted={wishlist.includes(viewProduct.id)}
-            onWishlist={handleWishlist}
-            disliked={disliked.includes(viewProduct.id)}
-            onDislike={handleDislikeRequest}
-          />
-        )}
-        {showCart && (
-          <CartSidebar
-            cart={cart}
-            cartTotal={cartTotal}
-            discountAmt={discountAmt}
-            finalTotal={finalTotal}
-            couponCode={couponCode}
-            couponDiscount={couponDiscount}
-            checkoutStep={checkoutStep}
-            shippingAddr={shippingAddr}
-            paymentMethod={paymentMethod}
-            orderNote={orderNote}
-            submittingOrder={submittingOrder}
-            onClose={() => setShowCart(false)}
-            onSetCheckoutStep={setCheckoutStep}
-            onUpdateQty={updateQty}
-            onRemoveFromCart={removeFromCart}
-            onSetCouponCode={setCouponCode}
-            onApplyCoupon={applyCoupon}
-            onRemoveCoupon={removeCoupon}
-            onSetShippingAddr={setShippingAddr}
-            onSetPaymentMethod={setPaymentMethod}
-            onSetOrderNote={setOrderNote}
-            onCheckout={handleCheckout}
-            showToast={showToast}
-            onGoToMarketplace={() => { setShowCart(false); setActiveTab('marketplace'); }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Navbar */}
-      <Navbar
-        role={role}
-        email={session?.user?.email}
-        activeTab={activeTab}
-        cartCount={cart.length}
-        unreadCount={unreadCount}
-        dislikedCount={disliked.length}
-        wishlistCount={wishlist.length}
-        onTabChange={setActiveTab}
-        onCartOpen={() => { setShowCart(true); setCheckoutStep('cart'); }}
-        onNotificationsOpen={() => setShowNotifications(true)}
-        onHiddenOpen={() => setShowHiddenPanel(true)}
-      />
-
-      {/* Views */}
-      <AnimatePresence mode="wait">
-
-        {/* ── Seller: Products ── */}
-        {activeTab === 'my-products' && (
-          <motion.div key="my-products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <SellerProducts
-              products={myProducts}
-              loading={loading}
-              session={session}
-              onProductsChanged={() => { fetchMyProducts(); fetchAllProducts(); }}
-              showToast={showToast}
+    <div className="flex h-screen w-full bg-gray-100 overflow-hidden font-sans">
+      
+      {/* PHẦN TRÁI: DANH SÁCH SẢN PHẨM */}
+      <div className="flex-1 flex flex-col p-6 overflow-hidden">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <Package className="text-blue-600" /> Hệ thống POS
+          </h1>
+          <div className="relative w-1/3">
+            <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Tìm kiếm món ăn..."
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
-          </motion.div>
-        )}
+          </div>
+        </div>
 
-        {/* ── Seller: Orders ── */}
-        {activeTab === 'my-orders' && (
-          <motion.div key="my-orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <SellerOrders
-              orders={orders}
-              loading={ordersLoading}
-              totalRevenue={totalRevenue}
-              todayRevenue={todayRevenue}
-              onRefresh={fetchOrders}
-              onUpdateStatus={updateOrderStatus}
-              onCancelOrder={cancelOrder}
-            />
-          </motion.div>
-        )}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 overflow-y-auto pr-2">
+          {filteredProducts.map(product => (
+            <div 
+              key={product.id}
+              onClick={() => addToCart(product)}
+              className="bg-white p-2 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 cursor-pointer transition-all border border-transparent hover:border-blue-400 group"
+            >
+              <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-xl mb-3 group-hover:opacity-90" />
+              <div className="px-2 pb-2">
+                <h3 className="font-bold text-gray-700 truncate">{product.name}</h3>
+                <p className="text-blue-600 font-black mt-1 text-lg">{product.price.toLocaleString()}đ</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-        {/* ── Buyer: Marketplace ── */}
-        {activeTab === 'marketplace' && (
-          <motion.div key="marketplace" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <Marketplace
-              allProducts={allProducts}
-              disliked={disliked}
-              wishlist={wishlist}
-              loading={loading}
-              onAddToCart={addToCart}
-              onView={setViewProduct}
-              onWishlist={handleWishlist}
-              onDislike={handleDislikeRequest}
-              onShowHidden={() => setShowHiddenPanel(true)}
-            />
-          </motion.div>
-        )}
+      {/* PHẦN PHẢI: GIỎ HÀNG & THANH TOÁN */}
+      <div className="w-[400px] bg-white shadow-2xl flex flex-col border-l border-gray-200">
+        <div className="p-6 border-b flex justify-between items-center bg-white">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <ShoppingCart className="text-blue-600" size={24} /> Đơn hàng
+            <span className="bg-blue-100 text-blue-600 text-xs px-2 py-1 rounded-full">{cart.length} món</span>
+          </h2>
+          <button onClick={clearCart} className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg">
+            <Trash2 size={20} />
+          </button>
+        </div>
 
-        {/* ── Buyer: My Purchases ── */}
-        {activeTab === 'my-purchases' && (
-          <motion.div key="my-purchases" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <BuyerOrders
-              orders={buyerOrders}
-              loading={ordersLoading}
-              onRefresh={fetchBuyerOrders}
-              onGoMarketplace={() => setActiveTab('marketplace')}
-            />
-          </motion.div>
-        )}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-50">
+              <ShoppingCart size={64} strokeWidth={1} />
+              <p className="mt-4 font-medium">Chưa có món nào được chọn</p>
+            </div>
+          ) : (
+            cart.map(item => (
+              <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex-1">
+                  <h4 className="font-bold text-gray-800 text-sm">{item.name}</h4>
+                  <p className="text-xs text-blue-600 font-semibold">{item.price.toLocaleString()}đ</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center bg-white rounded-lg border border-gray-200 p-1 shadow-inner">
+                    <button 
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                      className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Minus size={14} /></button>
+                    <span className="w-8 text-center font-bold text-gray-700">{item.quantity}</span>
+                    <button 
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Plus size={14} /></button>
+                  </div>
+                  <button 
+                    onClick={() => removeFromCart(item.id)}
+                    className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-        {/* ── Buyer: Wishlist ── */}
-        {activeTab === 'wishlist-tab' && (
-          <motion.div key="wishlist-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <Wishlist
-              wishlistProducts={wishlistProducts}
-              disliked={disliked}
-              wishlist={wishlist}
-              onAddToCart={addToCart}
-              onView={setViewProduct}
-              onWishlist={handleWishlist}
-              onDislike={handleDislikeRequest}
-              onShowHidden={() => setShowHiddenPanel(true)}
-              onGoMarketplace={() => setActiveTab('marketplace')}
-            />
-          </motion.div>
-        )}
-
-      </AnimatePresence>
-
-      {/* Mobile Bottom Nav */}
-      <MobileNav
-        role={role}
-        activeTab={activeTab}
-        cartCount={cart.length}
-        unreadCount={unreadCount}
-        onTabChange={setActiveTab}
-        onCartOpen={() => { setShowCart(true); setCheckoutStep('cart'); }}
-        onNotificationsOpen={() => setShowNotifications(true)}
-        onAddProduct={() => setActiveTab('my-products')}
-      />
-
-      {/* Bottom padding for mobile nav */}
-      <div className="h-16 md:hidden" />
+        <div className="p-6 bg-gray-50 border-t space-y-3">
+          <div className="flex justify-between text-gray-500 font-medium">
+            <span>Tạm tính:</span>
+            <span>{subtotal.toLocaleString()}đ</span>
+          </div>
+          <div className="flex justify-between text-gray-500 font-medium">
+            <span>Thuế VAT (10%):</span>
+            <span>{tax.toLocaleString()}đ</span>
+          </div>
+          <div className="flex justify-between text-2xl font-black text-gray-900 pt-3 border-t border-gray-200">
+            <span>Tổng cộng:</span>
+            <span className="text-blue-600 font-black">{total.toLocaleString()}đ</span>
+          </div>
+          <button 
+            onClick={handleCheckout}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl mt-4 flex items-center justify-center gap-2 transition-all shadow-[0_10px_20px_rgba(37,99,235,0.3)] active:scale-95"
+          >
+            <Receipt size={20} /> THANH TOÁN NGAY
+          </button>
+        </div>
+      </div>
     </div>
   );
-}
+};
+
+export default App;

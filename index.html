@@ -1,30 +1,19 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
-    <script>
-      // Protection against libraries trying to overwrite fetch in restricted environments
-      (function() {
-        if (typeof window !== 'undefined' && window.fetch) {
-          try {
-            const originalFetch = window.fetch;
-            Object.defineProperty(window, 'fetch', {
-              value: originalFetch,
-              writable: false,
-              configurable: false
-            });
-          } catch (e) {
-            // If it's already a getter or non-configurable, ignore
-          }
-        }
-      })();
-    </script>
+    <title>Hệ thống POS Hiện Đại</title>
+    <!-- Nạp Tailwind CSS từ Web -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body { background-color: #f3f4f6; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
-
