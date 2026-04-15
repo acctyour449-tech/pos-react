@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ProductMedia, Stars } from '../ui';
 import { fmt, getDiscount } from '../../utils';
 import { supabase } from '../../lib/supabase';
-import type { Product, Review } from '../../types/index'; // Thêm /index để chắc chắn Vite nhận diện được
+import type { Product, Review } from '../../types/index';
 
 // ─────────── PRODUCT CARD ───────────
 export function ProductCard({
@@ -283,6 +283,8 @@ export function ProductDetailModal({
   onWishlist,
   disliked,
   onDislike,
+  userId,
+  userName,
 }: {
   product: Product;
   onClose: () => void;
@@ -291,6 +293,8 @@ export function ProductDetailModal({
   onWishlist: (id: number) => void;
   disliked: boolean;
   onDislike: (id: number) => void;
+  userId?: string;
+  userName?: string;
 }) {
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState('');
@@ -322,8 +326,8 @@ export function ProductDetailModal({
   const handleSubmitReview = async (rating: number, comment: string) => {
     const reviewData = {
       product_id: product.id,
-      user_id: 'user_duc', 
-      user_name: 'Đức Design', 
+      user_id: userId || 'anonymous', 
+      user_name: userName || 'Người dùng', 
       rating,
       comment,
     };

@@ -6,7 +6,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 
 // Types
-import type { Product, Order } from './types';
+import type { Product, Order } from './types/index';
 
 // Hooks
 import { useToast } from './hooks/useToast';
@@ -385,6 +385,8 @@ export default function App() {
             onWishlist={handleWishlist}
             disliked={disliked.includes(viewProduct.id)}
             onDislike={handleDislikeRequest}
+            userId={session?.user?.id}
+            userName={session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Người dùng'}
           />
         )}
         {showCart && (
