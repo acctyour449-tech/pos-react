@@ -8,7 +8,6 @@ import { supabase } from '../lib/supabase';
 import { useChat } from '../hooks/useChat';
 import type { Order, Product } from '../types';
 
-// ─────────── BUYER ORDERS ───────────
 interface BuyerOrdersProps {
   orders: Order[];
   loading: boolean;
@@ -23,12 +22,15 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
   const [reviewText, setReviewText] = useState('');
   const [msgInput, setMsgInput] = useState('');
   
-  const { messages, sendMessage, loading: chatLoading } = useChat(chatOrder?.id || null);
+  const { messages, sendMessage } = useChat(chatOrder?.id || null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Tự động cuộn xuống khi có tin nhắn mới hoặc khi mở khung chat
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, chatOrder]);
 
   const handleSubmitReview = async () => {
     if (!reviewOrder) return;
@@ -61,7 +63,7 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black">Đơn hàng của tôi</h1>
-          <p className="text-gray-500 text-sm">Theo dõi trạng thái và tương tác với đơn hàng</p>
+          <p className="text-gray-500 text-sm">Theo dõi trạng thái và nhắn tin hỗ trợ</p>
         </div>
         <button onClick={onRefresh} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-sm font-bold hover:bg-gray-50 shadow-sm transition-all">
           <RefreshCw className="w-4 h-4" />Làm mới
@@ -90,12 +92,10 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
                     <span className="font-mono text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">#{String(order.id).slice(-8)}</span>
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${cfg.color}`}>{cfg.label}</span>
                   </div>
-                  <div className="text-right">
-                    <p className="font-black text-blue-600 text-lg">{fmt(order.total_price)}</p>
-                  </div>
+                  <p className="font-black text-blue-600 text-lg">{fmt(order.total_price)}</p>
                 </div>
 
-                <div className="px-5 py-4 flex flex-wrap gap-2">
+                <div className="px-5 py-4 flex flex-wrap gap-2 border-b border-gray-50">
                   {order.items.map((item: any, i: number) => (
                     <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 text-xs font-bold">
                       <span className="text-gray-800">{item.name}</span>
@@ -104,9 +104,9 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
                   ))}
                 </div>
 
-                <div className="px-5 pb-4 flex items-center justify-end gap-3 border-t border-gray-50 pt-4">
+                <div className="px-5 py-4 flex items-center justify-end gap-3">
                   <button onClick={() => setChatOrder(order)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
-                    <MessageSquare className="w-4 h-4" /> Chat với Shop
+                    <MessageSquare className="w-4 h-4" /> Nhắn tin cho Shop
                   </button>
                   {isCompleted && !order.is_reviewed && (
                     <button onClick={() => setReviewOrder(order)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-yellow-500 hover:bg-yellow-600 rounded-xl transition-colors">
@@ -120,40 +120,40 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
         </div>
       )}
 
-      {/* CHAT MODAL */}
+      {/* MODAL CHAT REALTIME */}
       {chatOrder && (
         <div className="fixed inset-0 z-[100] flex items-center justify-end sm:p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md h-full sm:h-[600px] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="bg-white w-full max-w-md h-full sm:h-[600px] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
             <div className="p-4 border-b flex justify-between items-center bg-blue-600 text-white">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-black">S</div>
                 <div>
-                  <p className="font-bold text-sm">Người bán: {chatOrder.seller_id.slice(0, 8)}</p>
+                  <p className="font-bold text-sm">Shop - ID: {chatOrder.seller_id.slice(0, 8)}</p>
                   <p className="text-[10px] opacity-80">Đơn hàng #{String(chatOrder.id).slice(-8)}</p>
                 </div>
               </div>
               <button onClick={() => setChatOrder(null)} className="p-2 hover:bg-white/10 rounded-full"><X className="w-5 h-5" /></button>
             </div>
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 scroll-smooth">
               {messages.map(m => (
                 <div key={m.id} className={`flex ${m.sender_id === chatOrder.buyer_id ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] p-3 rounded-2xl text-sm font-medium shadow-sm ${
-                    m.sender_id === chatOrder.buyer_id ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none'
-                  }`}>
+                    m.sender_id === chatOrder.buyer_id ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
+                  } ${m.id < 0 ? 'opacity-70' : ''}`}>
                     {m.content}
                   </div>
                 </div>
               ))}
             </div>
             <div className="p-4 border-t bg-white flex gap-2">
-              <input value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendChat()} placeholder="Nhập tin nhắn..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-              <button onClick={handleSendChat} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"><Send className="w-5 h-5" /></button>
+              <input value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendChat()} placeholder="Hỏi shop về đơn hàng..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+              <button onClick={handleSendChat} disabled={!msgInput.trim()} className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"><Send className="w-5 h-5" /></button>
             </div>
           </div>
         </div>
       )}
 
-      {/* REVIEW MODAL */}
+      {/* MODAL ĐÁNH GIÁ */}
       {reviewOrder && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
@@ -166,7 +166,7 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
                 </button>
               ))}
             </div>
-            <textarea className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm mb-4 resize-none" rows={4} placeholder="Cảm nhận của bạn..." value={reviewText} onChange={e => setReviewText(e.target.value)} />
+            <textarea className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm mb-4 resize-none" rows={4} placeholder="Cảm nhận của bạn về sản phẩm..." value={reviewText} onChange={e => setReviewText(e.target.value)} />
             <button onClick={handleSubmitReview} className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors">Gửi đánh giá</button>
           </div>
         </div>
