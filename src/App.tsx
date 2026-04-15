@@ -1,124 +1,530 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Zap, Loader2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Session } from '@supabase/supabase-js';
 
-// --- ICON SVG (Để không phải tải thư viện ngoài) ---
-const IconCart = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
-const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>;
-const IconSearch = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+import { supabase } from './lib/supabase';
 
-const App = () => {
-  // 1. Dữ liệu sản phẩm
-  const products = [
-    { id: 1, name: 'Cà Phê Muối', price: 29000, image: 'https://picsum.photos/200?random=1' },
-    { id: 2, name: 'Bánh Mì Thịt', price: 25000, image: 'https://picsum.photos/200?random=2' },
-    { id: 3, name: 'Trà Thạch Vải', price: 35000, image: 'https://picsum.photos/200?random=3' },
-    { id: 4, name: 'Bánh Sừng Bò', price: 45000, image: 'https://picsum.photos/200?random=4' },
-    { id: 5, name: 'Bạc Xỉu', price: 29000, image: 'https://picsum.photos/200?random=5' },
-    { id: 6, name: 'Trà Sữa', price: 40000, image: 'https://picsum.photos/200?random=6' },
-  ];
+// Types
+import type { Product, Order } from './types';
 
-  // 2. Quản lý trạng thái (State) bằng React thuần
-  const [cart, setCart] = useState([]);
-  const [search, setSearch] = useState('');
+// Hooks
+import { useToast } from './hooks/useToast';
+import { useCart } from './hooks/useCart';
+import { useWishlist } from './hooks/useWishlist';
+import { useNotifications } from './hooks/useNotifications';
 
-  // 3. Các hàm xử lý
-  const addToCart = (product) => {
-    setCart(prev => {
-      const isExisted = prev.find(item => item.id === product.id);
-      if (isExisted) {
-        return prev.map(item => item.id === product.id ? {...item, quantity: item.quantity + 1} : item);
-      }
-      return [...prev, { ...product, quantity: 1 }];
+// UI
+import { ToastContainer } from './components/ui';
+import { Navbar, MobileNav } from './components/ui/Navbar';
+
+// Auth
+import { AuthForm, RoleSelection } from './components/auth';
+
+// Product
+import { DislikeModal, ProductDetailModal } from './components/product';
+
+// Notification
+import { NotificationPanel, HiddenProductsPanel } from './components/notification';
+
+// Cart
+import { CartSidebar } from './components/cart';
+
+// Views
+import { SellerProducts } from './views/SellerProducts';
+import { SellerOrders } from './views/SellerOrders';
+import { Marketplace } from './views/Marketplace';
+import { BuyerOrders, Wishlist } from './views/BuyerViews';
+
+type CheckoutStep = 'cart' | 'address' | 'payment' | 'confirm';
+
+export default function App() {
+  // ── Auth ──
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // ── Data ──
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [buyerOrders, setBuyerOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  // ── Navigation ──
+  const [activeTab, setActiveTab] = useState('');
+
+  // ── UI state ──
+  const [showCart, setShowCart] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showHiddenPanel, setShowHiddenPanel] = useState(false);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [pendingDislike, setPendingDislike] = useState<Product | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('cart');
+  const [shippingAddr, setShippingAddr] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'bank' | 'momo'>('cod');
+  const [orderNote, setOrderNote] = useState('');
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+
+  // ── Hooks ──
+  const { toasts, showToast } = useToast();
+  const {
+    cart, cartTotal, discountAmt, finalTotal,
+    couponCode, setCouponCode, couponDiscount,
+    addToCart, updateQty, removeFromCart, clearCart,
+    applyCoupon, removeCoupon,
+  } = useCart(showToast);
+
+  const role = useMemo(
+    () => session?.user?.user_metadata?.role as 'seller' | 'buyer' | undefined,
+    [session]
+  );
+
+  const {
+    wishlist, disliked,
+    toggleWishlist, addDisliked, restoreProduct, restoreAll,
+  } = useWishlist(session?.user?.id, showToast);
+
+  const { notifications, unreadCount, markRead, markAllRead } =
+    useNotifications(session?.user?.id, showToast);
+
+  // ── Derived ──
+  const wishlistProducts = useMemo(
+    () => allProducts.filter(p => wishlist.includes(p.id)),
+    [allProducts, wishlist]
+  );
+
+  const totalRevenue = useMemo(
+    () => orders.reduce((s, o) => s + (Number(o.total_price) || 0), 0),
+    [orders]
+  );
+
+  const todayRevenue = useMemo(() => {
+    const today = new Date().toDateString();
+    return orders
+      .filter(o => new Date(o.created_at).toDateString() === today)
+      .reduce((s, o) => s + Number(o.total_price), 0);
+  }, [orders]);
+
+  // ── Auth init ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setAuthLoading(false);
     });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Default tab ──
+  useEffect(() => {
+    if (role === 'seller') setActiveTab('my-products');
+    else if (role === 'buyer') setActiveTab('marketplace');
+  }, [role]);
+
+  // ── Fetch triggers ──
+  useEffect(() => { if (session) fetchAllProducts(); }, [session]);
+
+  useEffect(() => {
+    if (session && role === 'seller' && activeTab === 'my-products') fetchMyProducts();
+  }, [session, role, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'my-orders' && role === 'seller') fetchOrders();
+  }, [activeTab, role]);
+
+  useEffect(() => {
+    if (activeTab === 'my-purchases' && role === 'buyer') fetchBuyerOrders();
+  }, [activeTab, role]);
+
+  // ── Data fetchers ──
+  async function fetchAllProducts() {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setAllProducts(data || []);
+    } catch (err: any) {
+      showToast('Lỗi tải sản phẩm: ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchMyProducts() {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('seller_id', session!.user.id)
+      .order('created_at', { ascending: false });
+    setMyProducts(data || []);
+  }
+
+  async function fetchOrders() {
+    setOrdersLoading(true);
+    const { data } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('seller_id', session!.user.id)
+      .order('created_at', { ascending: false });
+    setOrders(data || []);
+    setOrdersLoading(false);
+  }
+
+  async function fetchBuyerOrders() {
+    setOrdersLoading(true);
+    const { data } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('buyer_id', session!.user.id)
+      .order('created_at', { ascending: false });
+    setBuyerOrders(data || []);
+    setOrdersLoading(false);
+  }
+
+  // ── Dislike handlers ──
+  const handleDislikeRequest = useCallback((productId: number) => {
+    if (disliked.includes(productId)) {
+      restoreProduct(productId);
+      return;
+    }
+    const product = allProducts.find(p => p.id === productId);
+    if (product) setPendingDislike(product);
+  }, [disliked, allProducts, restoreProduct]);
+
+  const confirmDislike = useCallback(() => {
+    if (!pendingDislike) return;
+    addDisliked(pendingDislike.id);
+    setPendingDislike(null);
+    if (viewProduct?.id === pendingDislike.id) setViewProduct(null);
+  }, [pendingDislike, addDisliked, viewProduct]);
+
+  // ── Wishlist toggle ──
+  const handleWishlist = useCallback((id: number) => {
+    toggleWishlist(id, disliked.includes(id));
+  }, [toggleWishlist, disliked]);
+
+  // ── Order status update ──
+  const updateOrderStatus = async (order: Order, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', order.id)
+        .eq('seller_id', session!.user.id);
+      if (error) throw error;
+
+      const msgMap: Record<string, string> = {
+        'Đã xác nhận': `✅ Đơn hàng #${String(order.id).slice(-6)} đã được xác nhận!`,
+        'Đang giao':   `🚚 Đơn hàng #${String(order.id).slice(-6)} đang trên đường giao đến bạn!`,
+        'Hoàn thành':  `🎉 Đơn hàng #${String(order.id).slice(-6)} hoàn thành. Cảm ơn bạn!`,
+      };
+      const typeMap: Record<string, any> = {
+        'Đã xác nhận': 'order_confirmed',
+        'Đang giao': 'order_shipped',
+        'Hoàn thành': 'order_completed',
+      };
+      if (msgMap[newStatus] && order.buyer_id) {
+        await supabase.from('notifications').insert([{
+          user_id: order.buyer_id, order_id: order.id,
+          message: msgMap[newStatus], type: typeMap[newStatus], is_read: false,
+        }]);
+      }
+
+      showToast(`✓ Đã cập nhật: ${newStatus}`);
+      fetchOrders();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
   };
 
-  const updateQty = (id, delta) => {
-    setCart(prev => prev.map(item => 
-      item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
-    ));
+  const cancelOrder = async (order: Order) => {
+    if (!confirm('Xác nhận từ chối / huỷ đơn hàng này?')) return;
+    const { error } = await supabase.from('orders').update({ status: 'Đã hủy' }).eq('id', order.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    if (order.buyer_id) {
+      await supabase.from('notifications').insert([{
+        user_id: order.buyer_id, order_id: order.id,
+        message: `❌ Đơn hàng #${String(order.id).slice(-6)} đã bị huỷ.`,
+        type: 'system', is_read: false,
+      }]);
+    }
+    showToast('Đã huỷ đơn hàng', 'info');
+    fetchOrders();
   };
 
-  const removeItem = (id) => setCart(prev => prev.filter(item => item.id !== id));
+  // ── Checkout ──
+  const handleCheckout = async () => {
+    if (!cart.length || !session?.user?.id) return;
+    if (!shippingAddr.trim()) {
+      showToast('Vui lòng nhập địa chỉ giao hàng', 'error');
+      setCheckoutStep('address');
+      return;
+    }
+    try {
+      setSubmittingOrder(true);
+      const orderData = {
+        total_price: finalTotal,
+        subtotal: cartTotal,
+        discount_amount: discountAmt,
+        shipping_fee: 0,
+        seller_id: cart[0].seller_id,
+        buyer_id: session.user.id,
+        buyer_email: session.user.email,
+        status: 'Chờ xác nhận',
+        shipping_address: shippingAddr.trim(),
+        payment_method: paymentMethod,
+        note: orderNote.trim() || null,
+        items: cart.map(i => ({
+          id: i.id, name: i.name, price: i.price,
+          quantity: i.quantity, image: i.image, note: i.note || null,
+        })),
+      };
 
-  // 4. Tính toán tiền nong
-  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cart]);
-  const tax = Math.round(subtotal * 0.1);
-  const total = subtotal + tax;
+      const { data: order, error } = await supabase.from('orders').insert([orderData]).select().single();
+      if (error) throw error;
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+      await supabase.from('notifications').insert([{
+        user_id: cart[0].seller_id,
+        order_id: order.id,
+        message: `🛍️ Đơn hàng mới #${String(order.id).slice(-6)} — ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(finalTotal)}`,
+        type: 'new_order',
+        is_read: false,
+      }]);
 
-  return (
-    <div className="flex h-screen w-full bg-gray-100 font-sans overflow-hidden">
-      
-      {/* BÊN TRÁI: DANH SÁCH MÓN */}
-      <div className="flex-1 p-6 overflow-hidden flex flex-col">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-blue-700">POS SYSTEM</h1>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-3 flex items-center text-gray-400"><IconSearch /></div>
-            <input 
-              type="text" 
-              placeholder="Tìm món ăn..." 
-              className="pl-10 pr-4 py-2 border rounded-lg w-64 outline-none focus:ring-2 focus:ring-blue-400"
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </div>
+      clearCart();
+      setShowCart(false);
+      setCheckoutStep('cart');
+      setShippingAddr('');
+      setOrderNote('');
+      setPaymentMethod('cod');
+      showToast('🎉 Đặt hàng thành công! Đang chờ xác nhận...', 'success');
+      setTimeout(() => setActiveTab('my-purchases'), 1500);
+    } catch (err: any) {
+      showToast('Lỗi đặt hàng: ' + err.message, 'error');
+    } finally {
+      setSubmittingOrder(false);
+    }
+  };
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2">
-          {filteredProducts.map(p => (
-            <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl shadow-sm hover:shadow-md cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all">
-              <img src={p.image} className="w-full h-32 object-cover rounded-lg mb-2" />
-              <div className="font-bold text-gray-700 truncate">{p.name}</div>
-              <div className="text-blue-600 font-bold">{p.price.toLocaleString()}đ</div>
-            </div>
-          ))}
+  // ── Guards ──
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-6 text-center">
+        <div>
+          <h1 className="text-2xl font-black text-red-900">Thiếu cấu hình Supabase</h1>
+          <p className="text-red-600 mt-2 text-sm">Kiểm tra VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY</p>
         </div>
       </div>
+    );
+  }
 
-      {/* BÊN PHẢI: GIỎ HÀNG */}
-      <div className="w-96 bg-white border-l flex flex-col shadow-xl">
-        <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold flex items-center gap-2"><IconCart /> Đơn hàng</h2>
-          <button onClick={() => setCart([])} className="text-red-500 p-2 hover:bg-red-50 rounded"><IconTrash /></button>
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-600/30 animate-pulse">
+          <Zap className="w-7 h-7 text-white" />
         </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {cart.length === 0 ? (
-            <div className="text-center text-gray-400 mt-20">Giỏ hàng trống</div>
-          ) : (
-            cart.map(item => (
-              <div key={item.id} className="flex justify-between items-center mb-4 bg-gray-50 p-2 rounded-lg">
-                <div className="flex-1">
-                  <div className="text-sm font-bold">{item.name}</div>
-                  <div className="text-xs text-blue-500">{item.price.toLocaleString()}đ</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 bg-white border rounded shadow">-</button>
-                  <span className="font-bold">{item.quantity}</span>
-                  <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 bg-white border rounded shadow">+</button>
-                  <button onClick={() => removeItem(item.id)} className="ml-2 text-gray-300 hover:text-red-500">×</button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="p-4 bg-blue-50 space-y-2">
-          <div className="flex justify-between text-sm"><span>Tạm tính:</span><span>{subtotal.toLocaleString()}đ</span></div>
-          <div className="flex justify-between text-sm"><span>Thuế (10%):</span><span>{tax.toLocaleString()}đ</span></div>
-          <div className="flex justify-between text-xl font-bold border-t pt-2 mt-2">
-            <span>Tổng:</span><span className="text-blue-700">{total.toLocaleString()}đ</span>
-          </div>
-          <button 
-            onClick={() => {alert('Thanh toán thành công!'); setCart([]);}}
-            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-blue-700 shadow-lg active:scale-95 transition-all"
-          >
-            XUẤT HÓA ĐƠN
-          </button>
-        </div>
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
       </div>
     </div>
   );
-};
 
-export default App;
+  if (!session) return <AuthForm />;
+
+  if (!role) return (
+    <RoleSelection onSelect={() =>
+      supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
+    } />
+  );
+
+  // ══════════════════════════ RENDER ══════════════════════════
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+
+      {/* Toasts */}
+      <ToastContainer toasts={toasts} />
+
+      {/* Panels & Modals */}
+      <AnimatePresence>
+        {showNotifications && (
+          <NotificationPanel
+            notifications={notifications}
+            onClose={() => setShowNotifications(false)}
+            onMarkRead={markRead}
+            onMarkAllRead={() => markAllRead(session!.user.id)}
+          />
+        )}
+        {showHiddenPanel && (
+          <HiddenProductsPanel
+            hiddenIds={disliked}
+            allProducts={allProducts}
+            onRestore={restoreProduct}
+            onClose={() => setShowHiddenPanel(false)}
+          />
+        )}
+        {pendingDislike && (
+          <DislikeModal
+            product={pendingDislike}
+            onConfirm={confirmDislike}
+            onCancel={() => setPendingDislike(null)}
+          />
+        )}
+        {viewProduct && (
+          <ProductDetailModal
+            product={viewProduct}
+            onClose={() => setViewProduct(null)}
+            onAddToCart={(p, qty, note) => addToCart(p, qty, note)}
+            wishlisted={wishlist.includes(viewProduct.id)}
+            onWishlist={handleWishlist}
+            disliked={disliked.includes(viewProduct.id)}
+            onDislike={handleDislikeRequest}
+          />
+        )}
+        {showCart && (
+          <CartSidebar
+            cart={cart}
+            cartTotal={cartTotal}
+            discountAmt={discountAmt}
+            finalTotal={finalTotal}
+            couponCode={couponCode}
+            couponDiscount={couponDiscount}
+            checkoutStep={checkoutStep}
+            shippingAddr={shippingAddr}
+            paymentMethod={paymentMethod}
+            orderNote={orderNote}
+            submittingOrder={submittingOrder}
+            onClose={() => setShowCart(false)}
+            onSetCheckoutStep={setCheckoutStep}
+            onUpdateQty={updateQty}
+            onRemoveFromCart={removeFromCart}
+            onSetCouponCode={setCouponCode}
+            onApplyCoupon={applyCoupon}
+            onRemoveCoupon={removeCoupon}
+            onSetShippingAddr={setShippingAddr}
+            onSetPaymentMethod={setPaymentMethod}
+            onSetOrderNote={setOrderNote}
+            onCheckout={handleCheckout}
+            showToast={showToast}
+            onGoToMarketplace={() => { setShowCart(false); setActiveTab('marketplace'); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Navbar */}
+      <Navbar
+        role={role}
+        email={session?.user?.email}
+        activeTab={activeTab}
+        cartCount={cart.length}
+        unreadCount={unreadCount}
+        dislikedCount={disliked.length}
+        wishlistCount={wishlist.length}
+        onTabChange={setActiveTab}
+        onCartOpen={() => { setShowCart(true); setCheckoutStep('cart'); }}
+        onNotificationsOpen={() => setShowNotifications(true)}
+        onHiddenOpen={() => setShowHiddenPanel(true)}
+      />
+
+      {/* Views */}
+      <AnimatePresence mode="wait">
+
+        {/* ── Seller: Products ── */}
+        {activeTab === 'my-products' && (
+          <motion.div key="my-products" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <SellerProducts
+              products={myProducts}
+              loading={loading}
+              session={session}
+              onProductsChanged={() => { fetchMyProducts(); fetchAllProducts(); }}
+              showToast={showToast}
+            />
+          </motion.div>
+        )}
+
+        {/* ── Seller: Orders ── */}
+        {activeTab === 'my-orders' && (
+          <motion.div key="my-orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <SellerOrders
+              orders={orders}
+              loading={ordersLoading}
+              totalRevenue={totalRevenue}
+              todayRevenue={todayRevenue}
+              onRefresh={fetchOrders}
+              onUpdateStatus={updateOrderStatus}
+              onCancelOrder={cancelOrder}
+            />
+          </motion.div>
+        )}
+
+        {/* ── Buyer: Marketplace ── */}
+        {activeTab === 'marketplace' && (
+          <motion.div key="marketplace" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <Marketplace
+              allProducts={allProducts}
+              disliked={disliked}
+              wishlist={wishlist}
+              loading={loading}
+              onAddToCart={addToCart}
+              onView={setViewProduct}
+              onWishlist={handleWishlist}
+              onDislike={handleDislikeRequest}
+              onShowHidden={() => setShowHiddenPanel(true)}
+            />
+          </motion.div>
+        )}
+
+        {/* ── Buyer: My Purchases ── */}
+        {activeTab === 'my-purchases' && (
+          <motion.div key="my-purchases" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <BuyerOrders
+              orders={buyerOrders}
+              loading={ordersLoading}
+              onRefresh={fetchBuyerOrders}
+              onGoMarketplace={() => setActiveTab('marketplace')}
+            />
+          </motion.div>
+        )}
+
+        {/* ── Buyer: Wishlist ── */}
+        {activeTab === 'wishlist-tab' && (
+          <motion.div key="wishlist-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <Wishlist
+              wishlistProducts={wishlistProducts}
+              disliked={disliked}
+              wishlist={wishlist}
+              onAddToCart={addToCart}
+              onView={setViewProduct}
+              onWishlist={handleWishlist}
+              onDislike={handleDislikeRequest}
+              onShowHidden={() => setShowHiddenPanel(true)}
+              onGoMarketplace={() => setActiveTab('marketplace')}
+            />
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+
+      {/* Mobile Bottom Nav */}
+      <MobileNav
+        role={role}
+        activeTab={activeTab}
+        cartCount={cart.length}
+        unreadCount={unreadCount}
+        onTabChange={setActiveTab}
+        onCartOpen={() => { setShowCart(true); setCheckoutStep('cart'); }}
+        onNotificationsOpen={() => setShowNotifications(true)}
+        onAddProduct={() => setActiveTab('my-products')}
+      />
+
+      {/* Bottom padding for mobile nav */}
+      <div className="h-16 md:hidden" />
+    </div>
+  );
+}
