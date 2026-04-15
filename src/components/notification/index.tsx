@@ -1,4 +1,4 @@
-import { CheckCircle2, Truck, Package, ShoppingBag, Tag, Bell, BellRing, X, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle2, Truck, Package, ShoppingBag, Tag, Bell, BellRing, X, Eye, EyeOff, Star, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ProductMedia } from '../ui';
 import { timeAgo, fmt } from '../../utils';
@@ -12,6 +12,8 @@ const typeIcons: Record<string, React.ReactNode> = {
   new_order:       <ShoppingBag className="w-4 h-4 text-amber-500" />,
   promo:           <Tag className="w-4 h-4 text-pink-500" />,
   system:          <Bell className="w-4 h-4 text-gray-400" />,
+  review_requested:<Star className="w-4 h-4 text-yellow-500" />,
+  chat_message:    <MessageSquare className="w-4 h-4 text-blue-500" />,
 };
 
 export function NotificationPanel({

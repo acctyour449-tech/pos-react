@@ -1,5 +1,5 @@
-import React from 'react';
-import { Loader2, RefreshCw, ShoppingBag, MapPin, MessageCircle, Check, Heart, EyeOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, RefreshCw, ShoppingBag, MapPin, MessageSquare, Check, Heart, EyeOff, Star, X } from 'lucide-react';
 import { fmt } from '../utils';
 import { ORDER_STATUSES, PROGRESS_STEPS } from '../constants';
 import { ProductCard } from '../components/product';
@@ -15,12 +15,24 @@ interface BuyerOrdersProps {
 }
 
 export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: BuyerOrdersProps) {
+  const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
+  const [rating, setRating] = useState(5);
+  const [reviewText, setReviewText] = useState('');
+
+  const handleSubmitReview = () => {
+    // TODO: Connect this to Supabase to save the review
+    alert(`Cảm ơn bạn đã đánh giá ${rating} sao! Đánh giá đã được ghi nhận.`);
+    setReviewOrder(null);
+    setRating(5);
+    setReviewText('');
+  };
+
   return (
     <main className="max-w-3xl mx-auto p-5 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black">Đơn hàng của tôi</h1>
-          <p className="text-gray-500 text-sm">Theo dõi trạng thái đơn hàng realtime</p>
+          <p className="text-gray-500 text-sm">Theo dõi trạng thái và tương tác với đơn hàng</p>
         </div>
         <button
           onClick={onRefresh}
@@ -45,6 +57,8 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
           {orders.map(order => {
             const cfg = ORDER_STATUSES[order.status as keyof typeof ORDER_STATUSES] || ORDER_STATUSES['Chờ xác nhận'];
             const currentStep = PROGRESS_STEPS.indexOf(order.status);
+            const isCompleted = currentStep === PROGRESS_STEPS.length - 1;
+
             return (
               <div key={order.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                 {/* Header */}
@@ -92,7 +106,7 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
 
                 {/* Progress */}
                 {order.status !== 'Đã hủy' ? (
-                  <div className="px-5 pb-6">
+                  <div className="px-5 pb-4">
                     <div className="flex items-center">
                       {PROGRESS_STEPS.map((step, idx) => {
                         const done = idx <= currentStep;
@@ -122,9 +136,75 @@ export function BuyerOrders({ orders, loading, onRefresh, onGoMarketplace }: Buy
                     ❌ Đơn hàng đã bị huỷ
                   </div>
                 )}
+
+                {/* Interaction Actions */}
+                {order.status !== 'Đã hủy' && (
+                  <div className="px-5 pb-4 flex items-center justify-end gap-3 border-t border-gray-50 pt-4">
+                    <button 
+                      onClick={() => alert('Tính năng chat với shop đang được phát triển!')}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                    >
+                      <MessageSquare className="w-4 h-4" /> Liên hệ shop
+                    </button>
+                    {isCompleted && !order.is_reviewed && (
+                      <button
+                        onClick={() => setReviewOrder(order)}
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-yellow-500 hover:bg-yellow-600 rounded-xl transition-colors shadow-sm"
+                      >
+                        <Star className="w-4 h-4" /> Đánh giá sản phẩm
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Review Modal Overlay */}
+      {reviewOrder && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200">
+            <button 
+              onClick={() => setReviewOrder(null)} 
+              className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            
+            <div className="text-center mb-6">
+              <h2 className="text-xl font-black text-gray-800">Đánh giá đơn hàng</h2>
+              <p className="text-xs text-gray-500 mt-1 font-mono">#{String(reviewOrder.id).slice(-8)}</p>
+            </div>
+
+            <div className="flex gap-2 mb-6 justify-center">
+              {[1, 2, 3, 4, 5].map(star => (
+                <button 
+                  key={star} 
+                  onClick={() => setRating(star)}
+                  className="transition-transform hover:scale-110 focus:outline-none"
+                >
+                  <Star className={`w-10 h-10 ${star <= rating ? 'fill-yellow-400 text-yellow-400 drop-shadow-sm' : 'text-gray-200'}`} />
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white mb-4 transition-all resize-none"
+              rows={4}
+              placeholder="Chia sẻ cảm nhận của bạn về sản phẩm và dịch vụ shop..."
+              value={reviewText}
+              onChange={e => setReviewText(e.target.value)}
+            />
+
+            <button 
+              onClick={handleSubmitReview} 
+              className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-md shadow-blue-600/20"
+            >
+              Gửi đánh giá
+            </button>
+          </div>
         </div>
       )}
     </main>

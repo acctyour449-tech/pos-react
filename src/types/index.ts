@@ -45,6 +45,7 @@ export interface Order {
   note?: string;
   tracking_code?: string;
   estimated_delivery?: string;
+  is_reviewed?: boolean; // Đánh dấu đơn hàng đã được review hay chưa
 }
 
 export interface Notification {
@@ -52,7 +53,7 @@ export interface Notification {
   user_id: string;
   order_id: number;
   message: string;
-  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order' | 'promo' | 'system';
+  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order' | 'promo' | 'system' | 'review_requested' | 'chat_message';
   is_read: boolean;
   created_at: string;
 }
