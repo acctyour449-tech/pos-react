@@ -1,127 +1,119 @@
-import React, { useState } from 'react';
-import { usePOSStore } from './store/posStore';
-// Nạp Icon từ Web
-import { 
-  ShoppingCart, Trash2, Plus, Minus, Search, Receipt, Package 
-} from 'https://esm.sh/lucide-react';
+import React, { useState, useMemo } from 'react';
+
+// --- ICON SVG (Để không phải tải thư viện ngoài) ---
+const IconCart = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
+const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>;
+const IconSearch = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
 
 const App = () => {
-  const { products, cart, addToCart, removeFromCart, updateQuantity, clearCart } = usePOSStore();
-  const [searchTerm, setSearchTerm] = useState('');
+  // 1. Dữ liệu sản phẩm
+  const products = [
+    { id: 1, name: 'Cà Phê Muối', price: 29000, image: 'https://picsum.photos/200?random=1' },
+    { id: 2, name: 'Bánh Mì Thịt', price: 25000, image: 'https://picsum.photos/200?random=2' },
+    { id: 3, name: 'Trà Thạch Vải', price: 35000, image: 'https://picsum.photos/200?random=3' },
+    { id: 4, name: 'Bánh Sừng Bò', price: 45000, image: 'https://picsum.photos/200?random=4' },
+    { id: 5, name: 'Bạc Xỉu', price: 29000, image: 'https://picsum.photos/200?random=5' },
+    { id: 6, name: 'Trà Sữa', price: 40000, image: 'https://picsum.photos/200?random=6' },
+  ];
 
-  const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-  const tax = Math.round(subtotal * 0.1); // 10% VAT
-  const total = subtotal + tax;
+  // 2. Quản lý trạng thái (State) bằng React thuần
+  const [cart, setCart] = useState([]);
+  const [search, setSearch] = useState('');
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleCheckout = () => {
-    if (cart.length === 0) return alert("Giỏ hàng đang trống!");
-    alert(`Thanh toán thành công!\nTổng cộng: ${total.toLocaleString()}đ`);
-    clearCart();
+  // 3. Các hàm xử lý
+  const addToCart = (product) => {
+    setCart(prev => {
+      const isExisted = prev.find(item => item.id === product.id);
+      if (isExisted) {
+        return prev.map(item => item.id === product.id ? {...item, quantity: item.quantity + 1} : item);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
   };
 
+  const updateQty = (id, delta) => {
+    setCart(prev => prev.map(item => 
+      item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
+    ));
+  };
+
+  const removeItem = (id) => setCart(prev => prev.filter(item => item.id !== id));
+
+  // 4. Tính toán tiền nong
+  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cart]);
+  const tax = Math.round(subtotal * 0.1);
+  const total = subtotal + tax;
+
+  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+
   return (
-    <div className="flex h-screen w-full bg-gray-100 overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-gray-100 font-sans overflow-hidden">
       
-      {/* PHẦN TRÁI: DANH SÁCH SẢN PHẨM */}
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Package className="text-blue-600" /> Hệ thống POS
-          </h1>
-          <div className="relative w-1/3">
-            <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="Tìm kiếm món ăn..."
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-              onChange={(e) => setSearchTerm(e.target.value)}
+      {/* BÊN TRÁI: DANH SÁCH MÓN */}
+      <div className="flex-1 p-6 overflow-hidden flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-blue-700">POS SYSTEM</h1>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-3 flex items-center text-gray-400"><IconSearch /></div>
+            <input 
+              type="text" 
+              placeholder="Tìm món ăn..." 
+              className="pl-10 pr-4 py-2 border rounded-lg w-64 outline-none focus:ring-2 focus:ring-blue-400"
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 overflow-y-auto pr-2">
-          {filteredProducts.map(product => (
-            <div 
-              key={product.id}
-              onClick={() => addToCart(product)}
-              className="bg-white p-2 rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 cursor-pointer transition-all border border-transparent hover:border-blue-400 group"
-            >
-              <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-xl mb-3 group-hover:opacity-90" />
-              <div className="px-2 pb-2">
-                <h3 className="font-bold text-gray-700 truncate">{product.name}</h3>
-                <p className="text-blue-600 font-black mt-1 text-lg">{product.price.toLocaleString()}đ</p>
-              </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2">
+          {filteredProducts.map(p => (
+            <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl shadow-sm hover:shadow-md cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all">
+              <img src={p.image} className="w-full h-32 object-cover rounded-lg mb-2" />
+              <div className="font-bold text-gray-700 truncate">{p.name}</div>
+              <div className="text-blue-600 font-bold">{p.price.toLocaleString()}đ</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* PHẦN PHẢI: GIỎ HÀNG & THANH TOÁN */}
-      <div className="w-[400px] bg-white shadow-2xl flex flex-col border-l border-gray-200">
-        <div className="p-6 border-b flex justify-between items-center bg-white">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <ShoppingCart className="text-blue-600" size={24} /> Đơn hàng
-            <span className="bg-blue-100 text-blue-600 text-xs px-2 py-1 rounded-full">{cart.length} món</span>
-          </h2>
-          <button onClick={clearCart} className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg">
-            <Trash2 size={20} />
-          </button>
+      {/* BÊN PHẢI: GIỎ HÀNG */}
+      <div className="w-96 bg-white border-l flex flex-col shadow-xl">
+        <div className="p-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold flex items-center gap-2"><IconCart /> Đơn hàng</h2>
+          <button onClick={() => setCart([])} className="text-red-500 p-2 hover:bg-red-50 rounded"><IconTrash /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-50">
-              <ShoppingCart size={64} strokeWidth={1} />
-              <p className="mt-4 font-medium">Chưa có món nào được chọn</p>
-            </div>
+            <div className="text-center text-gray-400 mt-20">Giỏ hàng trống</div>
           ) : (
             cart.map(item => (
-              <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 shadow-sm">
+              <div key={item.id} className="flex justify-between items-center mb-4 bg-gray-50 p-2 rounded-lg">
                 <div className="flex-1">
-                  <h4 className="font-bold text-gray-800 text-sm">{item.name}</h4>
-                  <p className="text-xs text-blue-600 font-semibold">{item.price.toLocaleString()}đ</p>
+                  <div className="text-sm font-bold">{item.name}</div>
+                  <div className="text-xs text-blue-500">{item.price.toLocaleString()}đ</div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center bg-white rounded-lg border border-gray-200 p-1 shadow-inner">
-                    <button 
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Minus size={14} /></button>
-                    <span className="w-8 text-center font-bold text-gray-700">{item.quantity}</span>
-                    <button 
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Plus size={14} /></button>
-                  </div>
-                  <button 
-                    onClick={() => removeFromCart(item.id)}
-                    className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 bg-white border rounded shadow">-</button>
+                  <span className="font-bold">{item.quantity}</span>
+                  <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 bg-white border rounded shadow">+</button>
+                  <button onClick={() => removeItem(item.id)} className="ml-2 text-gray-300 hover:text-red-500">×</button>
                 </div>
               </div>
             ))
           )}
         </div>
 
-        <div className="p-6 bg-gray-50 border-t space-y-3">
-          <div className="flex justify-between text-gray-500 font-medium">
-            <span>Tạm tính:</span>
-            <span>{subtotal.toLocaleString()}đ</span>
-          </div>
-          <div className="flex justify-between text-gray-500 font-medium">
-            <span>Thuế VAT (10%):</span>
-            <span>{tax.toLocaleString()}đ</span>
-          </div>
-          <div className="flex justify-between text-2xl font-black text-gray-900 pt-3 border-t border-gray-200">
-            <span>Tổng cộng:</span>
-            <span className="text-blue-600 font-black">{total.toLocaleString()}đ</span>
+        <div className="p-4 bg-blue-50 space-y-2">
+          <div className="flex justify-between text-sm"><span>Tạm tính:</span><span>{subtotal.toLocaleString()}đ</span></div>
+          <div className="flex justify-between text-sm"><span>Thuế (10%):</span><span>{tax.toLocaleString()}đ</span></div>
+          <div className="flex justify-between text-xl font-bold border-t pt-2 mt-2">
+            <span>Tổng:</span><span className="text-blue-700">{total.toLocaleString()}đ</span>
           </div>
           <button 
-            onClick={handleCheckout}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl mt-4 flex items-center justify-center gap-2 transition-all shadow-[0_10px_20px_rgba(37,99,235,0.3)] active:scale-95"
+            onClick={() => {alert('Thanh toán thành công!'); setCart([]);}}
+            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-blue-700 shadow-lg active:scale-95 transition-all"
           >
-            <Receipt size={20} /> THANH TOÁN NGAY
+            XUẤT HÓA ĐƠN
           </button>
         </div>
       </div>
