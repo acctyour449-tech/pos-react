@@ -59,11 +59,13 @@ export interface Review {
 
 export interface Message {
   id: number;
-  order_id: number;
+  order_id?: number | null; // Cho phép null/undefined để hỗ trợ chat tư vấn trước mua
   sender_id: string;
   receiver_id: string;
   content: string;
   created_at: string;
+  is_read?: boolean; // Trạng thái đã xem
+  status?: 'sending' | 'sent' | 'error'; // Trạng thái UI nội bộ (không bắt buộc phải lưu db)
 }
 
 export interface Notification {
