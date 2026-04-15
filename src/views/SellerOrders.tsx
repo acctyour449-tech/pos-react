@@ -1,6 +1,8 @@
-import { Loader2, RefreshCw, ShoppingBag, DollarSign, TrendingUp, Clock, MapPin, MessageCircle } from 'lucide-react';
-import { fmt, timeAgo } from '../utils';
+import React, { useState, useRef, useEffect } from 'react';
+import { Loader2, RefreshCw, ShoppingBag, DollarSign, TrendingUp, Clock, MapPin, MessageCircle, MessageSquare, X, Send } from 'lucide-react';
+import { fmt } from '../utils';
 import { ORDER_STATUSES } from '../constants';
+import { useChat } from '../hooks/useChat';
 import type { Order } from '../types';
 
 interface SellerOrdersProps {
@@ -17,8 +19,26 @@ export function SellerOrders({
   orders, loading, totalRevenue, todayRevenue,
   onRefresh, onUpdateStatus, onCancelOrder,
 }: SellerOrdersProps) {
+  const [chatOrder, setChatOrder] = useState<Order | null>(null);
+  const [msgInput, setMsgInput] = useState('');
+  
+  const { messages, sendMessage } = useChat(chatOrder?.id || null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Tự động cuộn xuống dưới cùng khi có tin nhắn mới
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, chatOrder]);
+
+  const handleSendChat = () => {
+    if (!chatOrder || !msgInput.trim()) return;
+    // Người bán gửi cho người mua
+    sendMessage(chatOrder.seller_id, chatOrder.buyer_id, msgInput);
+    setMsgInput('');
+  };
+
   return (
-    <main className="max-w-7xl mx-auto p-5 space-y-5">
+    <main className="max-w-7xl mx-auto p-5 space-y-5 relative">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black">Quản lý đơn hàng</h1>
@@ -112,11 +132,18 @@ export function SellerOrders({
                 )}
 
                 {/* Actions */}
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setChatOrder(order)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                  >
+                    <MessageSquare className="w-4 h-4" /> Chat với Khách
+                  </button>
+                  <div className="flex-1"></div>
                   {cfg.next && (
                     <button
                       onClick={() => onUpdateStatus(order, cfg.next!)}
-                      className={`flex-1 min-w-[140px] ${cfg.nextBg} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.97]`}
+                      className={`min-w-[140px] ${cfg.nextBg} text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.97]`}
                     >
                       {cfg.nextLabel}
                     </button>
@@ -133,6 +160,64 @@ export function SellerOrders({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* CHAT MODAL */}
+      {chatOrder && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-end sm:p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md h-full sm:h-[600px] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+            {/* Header */}
+            <div className="p-4 border-b flex justify-between items-center bg-gray-900 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-black">
+                  {chatOrder.buyer_email ? chatOrder.buyer_email[0].toUpperCase() : 'K'}
+                </div>
+                <div>
+                  <p className="font-bold text-sm truncate max-w-[200px]">Khách: {chatOrder.buyer_email || chatOrder.buyer_id.slice(0,8)}</p>
+                  <p className="text-[10px] text-gray-400">Đơn hàng #{String(chatOrder.id).slice(-8)}</p>
+                </div>
+              </div>
+              <button onClick={() => setChatOrder(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Messages */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 scroll-smooth">
+              {messages.map(m => {
+                const isMe = m.sender_id === chatOrder.seller_id;
+                const isTemp = m.id < 0;
+                return (
+                  <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} ${isTemp ? 'opacity-70' : ''}`}>
+                    <div className={`max-w-[80%] p-3 rounded-2xl text-sm font-medium shadow-sm ${
+                      isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
+                    }`}>
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Input */}
+            <div className="p-4 border-t bg-white flex gap-2">
+              <input 
+                value={msgInput} 
+                onChange={e => setMsgInput(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && handleSendChat()} 
+                placeholder="Nhập tin nhắn hỗ trợ khách hàng..." 
+                className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 transition-shadow outline-none" 
+              />
+              <button 
+                onClick={handleSendChat} 
+                disabled={!msgInput.trim()}
+                className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>
