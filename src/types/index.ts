@@ -6,7 +6,7 @@ export interface Review {
   user_id: string;
   user_name: string;
   user_avatar?: string;
-  rating: number; // 1 đến 5
+  rating: number; // Từ 1 đến 5
   comment: string;
   images?: string[];
   created_at: string;
@@ -32,7 +32,7 @@ export interface Product {
   is_featured?: boolean;
   discount_percent?: number;
   created_at?: string;
-  reviews?: Review[]; // Đã thêm trường reviews
+  reviews?: Review[];
 }
 
 export interface CartItem extends Product {

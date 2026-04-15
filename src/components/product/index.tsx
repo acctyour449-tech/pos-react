@@ -6,10 +6,10 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { ProductMedia, Stars } from '../ui';
 import { fmt, getDiscount } from '../../utils';
-import { supabase } from '../../lib/supabase'; // Đảm bảo đường dẫn này đúng với cấu trúc dự án của bạn
-import type { Product, Review } from '../../types';
+import { supabase } from '../../lib/supabase';
+import type { Product, Review } from '../../types/index'; // Thêm /index để chắc chắn Vite nhận diện được
 
-// ─────────── COMPONENT: PRODUCT CARD ───────────
+// ─────────── PRODUCT CARD ───────────
 export function ProductCard({
   product,
   onAddToCart,
@@ -130,7 +130,7 @@ export function ProductCard({
   );
 }
 
-// ─────────── COMPONENT: DISLIKE MODAL ───────────
+// ─────────── DISLIKE CONFIRMATION MODAL ───────────
 export function DislikeModal({
   product,
   onConfirm,
@@ -159,20 +159,11 @@ export function DislikeModal({
         <h3 className="text-lg font-black mb-2 text-gray-900">Ẩn sản phẩm này?</h3>
         <p className="text-sm text-gray-500 mb-1 font-medium">"{product.name}"</p>
         <p className="text-xs text-gray-400 mb-6 leading-relaxed">
-          Sản phẩm này sẽ bị ẩn khỏi tất cả danh sách của bạn. Bạn có thể khôi phục bất kỳ lúc nào trong phần{' '}
-          <strong>Đã ẩn</strong>.
+          Sản phẩm này sẽ bị ẩn khỏi danh sách. Bạn có thể khôi phục bất kỳ lúc nào trong phần Đã ẩn.
         </p>
         <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm"
-          >
-            Huỷ
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-3 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-2xl transition-all text-sm flex items-center justify-center gap-2"
-          >
+          <button onClick={onCancel} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm">Huỷ</button>
+          <button onClick={onConfirm} className="flex-1 py-3 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-2xl transition-all text-sm flex items-center justify-center gap-2">
             <EyeOff className="w-4 h-4" />Ẩn đi
           </button>
         </div>
@@ -181,7 +172,7 @@ export function DislikeModal({
   );
 }
 
-// ─────────── COMPONENT: PRODUCT REVIEWS (UI) ───────────
+// ─────────── PRODUCT REVIEWS COMPONENT ───────────
 function ProductReviews({ 
   productId, 
   reviews, 
@@ -220,46 +211,28 @@ function ProductReviews({
 
       <AnimatePresence>
         {showForm && (
-          <motion.div 
-            initial={{ opacity: 0, height: 0 }} 
-            animate={{ opacity: 1, height: 'auto' }} 
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-8"
-          >
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-8">
             <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200">
               <p className="text-sm font-bold text-gray-700 mb-2">Chất lượng sản phẩm</p>
               <div className="flex gap-1 mb-4 cursor-pointer">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
-                    className={`w-8 h-8 transition-all ${
-                      star <= (hoverRating || newRating) 
-                        ? 'fill-amber-400 text-amber-400 scale-110' 
-                        : 'text-gray-300'
-                    }`}
+                    className={`w-8 h-8 transition-all ${star <= (hoverRating || newRating) ? 'fill-amber-400 text-amber-400 scale-110' : 'text-gray-300'}`}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
                     onClick={() => setNewRating(star)}
                   />
                 ))}
               </div>
-              
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Chia sẻ trải nghiệm của bạn..."
                 className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none min-h-[100px] mb-3"
               />
-              
-              <div className="flex justify-between items-center">
-                <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                  <ImageIcon className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={handleSubmit}
-                  disabled={newRating === 0}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-md"
-                >
+              <div className="flex justify-end">
+                <button onClick={handleSubmit} disabled={newRating === 0} className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-all">
                   <Send className="w-4 h-4" /> Gửi đánh giá
                 </button>
               </div>
@@ -270,37 +243,25 @@ function ProductReviews({
 
       <div className="space-y-5">
         {loading ? (
-          <div className="flex justify-center py-8">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
         ) : reviews.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-            Chưa có đánh giá nào. Hãy là người đầu tiên!
-          </p>
+          <p className="text-center text-sm text-gray-400 py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">Chưa có đánh giá nào.</p>
         ) : (
           reviews.map((review) => (
             <div key={review.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
-                    {review.user_avatar ? (
-                      <img src={review.user_avatar} alt={review.user_name} className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">{review.user_name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={`w-3 h-3 ${i < review.rating ? 'fill-amber-400 text-amber-400' : 'fill-gray-200 text-gray-200'}`} />
-                        ))}
-                      </div>
-                      <span className="text-[10px] text-gray-400">
-                        {new Date(review.created_at).toLocaleDateString('vi-VN')}
-                      </span>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
+                  <User className="w-5 h-5 text-gray-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{review.user_name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} className={`w-3 h-3 ${i < review.rating ? 'fill-amber-400 text-amber-400' : 'fill-gray-200 text-gray-200'}`} />
+                      ))}
                     </div>
+                    <span className="text-[10px] text-gray-400">{new Date(review.created_at).toLocaleDateString('vi-VN')}</span>
                   </div>
                 </div>
               </div>
@@ -313,7 +274,7 @@ function ProductReviews({
   );
 }
 
-// ─────────── COMPONENT: PRODUCT DETAIL MODAL (MAIN) ───────────
+// ─────────── PRODUCT DETAIL MODAL ───────────
 export function ProductDetailModal({
   product,
   onClose,
@@ -334,8 +295,6 @@ export function ProductDetailModal({
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState('');
   const [activeImg, setActiveImg] = useState(0);
-  
-  // State quản lý đánh giá thực tế
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
 
@@ -344,10 +303,8 @@ export function ProductDetailModal({
   const outOfStock = (product.stock ?? 1) <= 0;
   const maxQty = product.stock !== undefined ? product.stock : 99;
 
-  // 1. Tải danh sách đánh giá từ Supabase khi mở Modal
   useEffect(() => {
     document.body.style.overflow = 'hidden';
-    
     const fetchReviews = async () => {
       setReviewsLoading(true);
       const { data, error } = await supabase
@@ -355,113 +312,52 @@ export function ProductDetailModal({
         .select('*')
         .eq('product_id', product.id)
         .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setReviews(data);
-      }
+      if (!error && data) setReviews(data);
       setReviewsLoading(false);
     };
-
     fetchReviews();
-
     return () => { document.body.style.overflow = ''; };
   }, [product.id]);
 
-  // 2. Hàm gửi đánh giá mới lên Supabase
   const handleSubmitReview = async (rating: number, comment: string) => {
     const reviewData = {
       product_id: product.id,
-      user_id: 'guest_user', // TODO: Lấy từ Auth Context của bạn
-      user_name: 'Đức Design', // Tên hiển thị mặc định
+      user_id: 'user_duc', 
+      user_name: 'Đức Design', 
       rating,
       comment,
     };
 
-    // Optimistic Update: Hiển thị ngay cho người dùng thấy
-    const tempReview: Review = { 
-      id: Date.now(), 
-      ...reviewData, 
-      created_at: new Date().toISOString() 
-    };
+    const tempReview: Review = { id: Date.now(), ...reviewData, created_at: new Date().toISOString() };
     setReviews([tempReview, ...reviews]);
 
-    // Lưu vào Database
     const { error } = await supabase.from('reviews').insert([reviewData]);
-    
     if (error) {
-      console.error('Lỗi Supabase:', error);
-      alert('Không thể lưu đánh giá. Vui lòng thử lại!');
-      setReviews(reviews); // Revert nếu lỗi
+      console.error('Lỗi lưu review:', error);
+      alert('Không thể lưu đánh giá.');
+      setReviews(reviews);
     }
   };
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-6">
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 60 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className="relative bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto"
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-2.5 bg-black/20 hover:bg-black/35 backdrop-blur-sm rounded-full transition-colors"
-        >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 60 }} className="relative bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2.5 bg-black/20 hover:bg-black/35 backdrop-blur-sm rounded-full transition-colors">
           <X className="w-4 h-4 text-white" />
         </button>
 
-        {/* Gallery */}
         <div className="h-72 bg-gray-100 relative overflow-hidden">
           <ProductMedia src={images[activeImg]} alt={product.name} className="w-full h-full" />
-          {discount > 0 && (
-            <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-black px-3 py-1 rounded-full">
-              -{discount}% GIẢM
-            </span>
-          )}
-          {images.length > 1 && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
-              {images.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveImg(i)}
-                  className={`h-1.5 rounded-full transition-all bg-white ${
-                    i === activeImg ? 'w-6 opacity-100' : 'w-1.5 opacity-50'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
+          {discount > 0 && <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-black px-3 py-1 rounded-full">-{discount}% GIẢM</span>}
         </div>
 
-        {/* Product Details Content */}
         <div className="p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-xl font-black text-gray-900 leading-tight flex-1">{product.name}</h2>
-            <div className="flex gap-2 flex-shrink-0">
-              <button
-                onClick={() => onWishlist(product.id)}
-                className={`p-2.5 rounded-xl border-2 transition-all ${
-                  wishlisted
-                    ? 'bg-red-50 border-red-200 text-red-500'
-                    : 'border-gray-200 text-gray-400 hover:border-red-200 hover:text-red-400'
-                }`}
-              >
+            <div className="flex gap-2">
+              <button onClick={() => onWishlist(product.id)} className={`p-2.5 rounded-xl border-2 transition-all ${wishlisted ? 'bg-red-50 border-red-200 text-red-500' : 'border-gray-200 text-gray-400'}`}>
                 <Heart className={`w-4 h-4 ${wishlisted ? 'fill-red-500' : ''}`} />
-              </button>
-              <button
-                onClick={() => onDislike(product.id)}
-                title="Ẩn sản phẩm này"
-                className={`p-2.5 rounded-xl border-2 transition-all ${
-                  disliked
-                    ? 'bg-gray-100 border-gray-300 text-gray-600'
-                    : 'border-gray-200 text-gray-400 hover:border-gray-300'
-                }`}
-              >
-                <EyeOff className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -472,53 +368,22 @@ export function ProductDetailModal({
             <span className="text-sm text-gray-400">({product.review_count || 0} đánh giá)</span>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-3xl font-black text-blue-600">{fmt(product.price)}</span>
-            {product.original_price && product.original_price > product.price && (
-              <span className="text-lg text-gray-400 line-through">{fmt(product.original_price)}</span>
-            )}
-          </div>
+          <p className="text-3xl font-black text-blue-600">{fmt(product.price)}</p>
 
-          {product.description && (
-            <p className="text-gray-600 text-sm leading-relaxed">{product.description}</p>
-          )}
+          {product.description && <p className="text-gray-600 text-sm leading-relaxed">{product.description}</p>}
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-gray-400 uppercase tracking-wider">Ghi chú</label>
-            <textarea
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              rows={2}
-              placeholder="Ví dụ: Ít đường, không đá..."
-              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-            />
-          </div>
-
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-3 items-center pt-2">
             <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-2xl p-1">
               <button onClick={() => setQty(q => Math.max(1, q - 1))} className="p-2 hover:bg-gray-200 rounded-xl"><Minus className="w-4 h-4" /></button>
               <span className="font-black text-lg w-8 text-center">{qty}</span>
               <button onClick={() => setQty(q => Math.min(maxQty, q + 1))} className="p-2 hover:bg-gray-200 rounded-xl"><Plus className="w-4 h-4" /></button>
             </div>
-            <button
-              onClick={() => { if (!outOfStock) { onAddToCart(product, qty, note); onClose(); } }}
-              disabled={outOfStock}
-              className={`flex-1 font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] text-sm ${
-                outOfStock ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25'
-              }`}
-            >
-              <ShoppingCart className="w-4 h-4" />
-              {outOfStock ? 'Hết hàng' : `Thêm — ${fmt(product.price * qty)}`}
+            <button onClick={() => { if (!outOfStock) { onAddToCart(product, qty, note); onClose(); } }} disabled={outOfStock} className={`flex-1 font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-all text-sm ${outOfStock ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'}`}>
+              <ShoppingCart className="w-4 h-4" /> {outOfStock ? 'Hết hàng' : `Thêm — ${fmt(product.price * qty)}`}
             </button>
           </div>
 
-          {/* HIỂN THỊ ĐÁNH GIÁ Ở ĐÂY */}
-          <ProductReviews 
-            productId={product.id} 
-            reviews={reviews} 
-            loading={reviewsLoading}
-            onSubmitReview={handleSubmitReview} 
-          />
+          <ProductReviews productId={product.id} reviews={reviews} loading={reviewsLoading} onSubmitReview={handleSubmitReview} />
         </div>
       </motion.div>
     </div>
