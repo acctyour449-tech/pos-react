@@ -1,5 +1,17 @@
 // ─────────── TYPES ───────────
 
+export interface Review {
+  id: number;
+  product_id: number;
+  order_id?: number;
+  user_id: string;
+  user_name: string;
+  rating: number; // 1 - 5
+  comment: string;
+  seller_reply?: string; // Phản hồi từ người bán
+  created_at: string;
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -20,11 +32,18 @@ export interface Product {
   is_featured?: boolean;
   discount_percent?: number;
   created_at?: string;
+  reviews?: Review[]; // Danh sách đánh giá của sản phẩm
 }
 
 export interface CartItem extends Product {
   quantity: number;
   note?: string;
+}
+
+export interface OrderItem extends Product {
+  quantity: number;
+  note?: string;
+  review?: Review; // Thêm thông tin đánh giá vào từng item trong đơn hàng
 }
 
 export interface Order {
@@ -34,7 +53,7 @@ export interface Order {
   subtotal?: number;
   discount_amount?: number;
   shipping_fee?: number;
-  items: any;
+  items: OrderItem[] | any;
   seller_id: string;
   buyer_id: string;
   buyer_name?: string;
