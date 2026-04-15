@@ -1,17 +1,5 @@
 // ─────────── TYPES ───────────
 
-export interface Review {
-  id: number;
-  product_id: number;
-  user_id: string;
-  user_name: string;
-  user_avatar?: string;
-  rating: number; // Từ 1 đến 5
-  comment: string;
-  images?: string[];
-  created_at: string;
-}
-
 export interface Product {
   id: number;
   name: string;
@@ -32,7 +20,6 @@ export interface Product {
   is_featured?: boolean;
   discount_percent?: number;
   created_at?: string;
-  reviews?: Review[];
 }
 
 export interface CartItem extends Product {
