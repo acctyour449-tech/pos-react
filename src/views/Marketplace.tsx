@@ -24,7 +24,6 @@ export function Marketplace({ products, categories, loading, wishlist, disliked,
   const [qty, setQty] = useState(1);
   const [reviews, setReviews] = useState<Review[]>([]);
 
-  // Fetch reviews khi mở modal sản phẩm
   useEffect(() => {
     if (selectedProduct) {
       const fetchReviews = async () => {
@@ -40,10 +39,16 @@ export function Marketplace({ products, categories, loading, wishlist, disliked,
     }
   }, [selectedProduct]);
 
-  const filtered = products.filter(p => {
+  // FIX LỖI Ở ĐÂY: Thêm (products || []) và an toàn hoá disliked
+  const safeProducts = products || [];
+  const safeDisliked = disliked || [];
+  const safeWishlist = wishlist || [];
+  const safeCategories = categories || [];
+
+  const filtered = safeProducts.filter(p => {
     const matchCat = selectedCategory === 'Tất cả' || p.category === selectedCategory;
-    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const isHidden = disliked.includes(p.id);
+    const matchSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const isHidden = safeDisliked.includes(p.id);
     return matchCat && matchSearch && !isHidden;
   });
 
@@ -56,7 +61,7 @@ export function Marketplace({ products, categories, loading, wishlist, disliked,
           <input type="text" placeholder="Tìm kiếm sản phẩm..." className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 transition-all" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto no-scrollbar">
-          {['Tất cả', ...categories].map(cat => (
+          {['Tất cả', ...safeCategories].map(cat => (
             <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-5 py-2.5 rounded-2xl text-sm font-bold whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
               {cat}
             </button>
@@ -72,7 +77,7 @@ export function Marketplace({ products, categories, loading, wishlist, disliked,
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filtered.map(p => (
-            <ProductCard key={p.id} product={p} onAddToCart={onAddToCart} onView={setSelectedProduct} wishlisted={wishlist.includes(p.id)} onWishlist={onWishlist} disliked={disliked.includes(p.id)} onDislike={onDislike} />
+            <ProductCard key={p.id} product={p} onAddToCart={onAddToCart} onView={setSelectedProduct} wishlisted={safeWishlist.includes(p.id)} onWishlist={onWishlist} disliked={safeDisliked.includes(p.id)} onDislike={onDislike} />
           ))}
         </div>
       )}

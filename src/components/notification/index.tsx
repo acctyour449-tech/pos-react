@@ -27,7 +27,9 @@ export function NotificationPanel({
   onMarkRead: (id: number) => void;
   onMarkAllRead: () => void;
 }) {
-  const unread = notifications.filter(n => !n.is_read).length;
+  // FIX: An toàn hóa notifications bằng (notifications || [])
+  const safeNotifs = notifications || [];
+  const unread = safeNotifs.filter(n => !n.is_read).length;
 
   return (
     <div className="fixed inset-0 z-[80] flex justify-end">
@@ -64,13 +66,13 @@ export function NotificationPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {notifications.length === 0 ? (
+          {safeNotifs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-4 p-10">
               <Bell className="w-14 h-14" />
               <p className="font-bold text-gray-400 text-sm">Không có thông báo nào</p>
             </div>
           ) : (
-            notifications.map(n => (
+            safeNotifs.map(n => (
               <motion.div
                 key={n.id} layout
                 onClick={() => !n.is_read && onMarkRead(n.id)}
@@ -111,7 +113,10 @@ export function HiddenProductsPanel({
   onRestore: (id: number) => void;
   onClose: () => void;
 }) {
-  const hiddenProducts = allProducts.filter(p => hiddenIds.includes(p.id));
+  // FIX: An toàn hóa bằng mảng rỗng
+  const safeProducts = allProducts || [];
+  const safeHiddenIds = hiddenIds || [];
+  const hiddenProducts = safeProducts.filter(p => safeHiddenIds.includes(p.id));
 
   return (
     <div className="fixed inset-0 z-[85] flex justify-start">
@@ -168,7 +173,7 @@ export function HiddenProductsPanel({
         {hiddenProducts.length > 0 && (
           <div className="p-4 border-t border-gray-100">
             <button
-              onClick={() => { hiddenIds.forEach(id => onRestore(id)); onClose(); }}
+              onClick={() => { safeHiddenIds.forEach(id => onRestore(id)); onClose(); }}
               className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-colors"
             >
               Hiện tất cả ({hiddenProducts.length})
