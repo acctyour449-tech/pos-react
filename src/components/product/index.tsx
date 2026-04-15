@@ -327,12 +327,13 @@ export function ProductDetailModal({
     const reviewData = {
       product_id: product.id,
       user_id: userId || 'anonymous', 
-      user_name: userName || 'Người dùng', 
+      user_name: userName || 'Người dùng',
+      buyer_id: userId || 'anonymous', // <--- Đã thêm trường buyer_id vào đây để fix lỗi DB
       rating,
       comment,
     };
 
-    const tempReview: Review = { id: Date.now(), ...reviewData, created_at: new Date().toISOString() };
+    const tempReview = { id: Date.now(), ...reviewData, created_at: new Date().toISOString() } as Review;
     setReviews([tempReview, ...reviews]);
 
     const { error } = await supabase.from('reviews').insert([reviewData]);
