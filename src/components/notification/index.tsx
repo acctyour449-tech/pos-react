@@ -1,4 +1,4 @@
-import { CheckCircle2, Truck, Package, ShoppingBag, Tag, Bell, BellRing, X, Eye, EyeOff, Star, MessageSquare } from 'lucide-react';
+import { CheckCircle2, Truck, Package, ShoppingBag, Tag, Bell, BellRing, X, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ProductMedia } from '../ui';
 import { timeAgo, fmt } from '../../utils';
@@ -12,8 +12,6 @@ const typeIcons: Record<string, React.ReactNode> = {
   new_order:       <ShoppingBag className="w-4 h-4 text-amber-500" />,
   promo:           <Tag className="w-4 h-4 text-pink-500" />,
   system:          <Bell className="w-4 h-4 text-gray-400" />,
-  review_requested:<Star className="w-4 h-4 text-yellow-500" />,
-  chat_message:    <MessageSquare className="w-4 h-4 text-blue-500" />,
 };
 
 export function NotificationPanel({
@@ -27,9 +25,7 @@ export function NotificationPanel({
   onMarkRead: (id: number) => void;
   onMarkAllRead: () => void;
 }) {
-  // FIX: An toàn hóa notifications bằng (notifications || [])
-  const safeNotifs = notifications || [];
-  const unread = safeNotifs.filter(n => !n.is_read).length;
+  const unread = notifications.filter(n => !n.is_read).length;
 
   return (
     <div className="fixed inset-0 z-[80] flex justify-end">
@@ -66,13 +62,13 @@ export function NotificationPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {safeNotifs.length === 0 ? (
+          {notifications.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-4 p-10">
               <Bell className="w-14 h-14" />
               <p className="font-bold text-gray-400 text-sm">Không có thông báo nào</p>
             </div>
           ) : (
-            safeNotifs.map(n => (
+            notifications.map(n => (
               <motion.div
                 key={n.id} layout
                 onClick={() => !n.is_read && onMarkRead(n.id)}
@@ -113,10 +109,7 @@ export function HiddenProductsPanel({
   onRestore: (id: number) => void;
   onClose: () => void;
 }) {
-  // FIX: An toàn hóa bằng mảng rỗng
-  const safeProducts = allProducts || [];
-  const safeHiddenIds = hiddenIds || [];
-  const hiddenProducts = safeProducts.filter(p => safeHiddenIds.includes(p.id));
+  const hiddenProducts = allProducts.filter(p => hiddenIds.includes(p.id));
 
   return (
     <div className="fixed inset-0 z-[85] flex justify-start">
@@ -173,7 +166,7 @@ export function HiddenProductsPanel({
         {hiddenProducts.length > 0 && (
           <div className="p-4 border-t border-gray-100">
             <button
-              onClick={() => { safeHiddenIds.forEach(id => onRestore(id)); onClose(); }}
+              onClick={() => { hiddenIds.forEach(id => onRestore(id)); onClose(); }}
               className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-colors"
             >
               Hiện tất cả ({hiddenProducts.length})

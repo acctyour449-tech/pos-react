@@ -1,3 +1,5 @@
+// ─────────── TYPES ───────────
+
 export interface Product {
   id: number;
   name: string;
@@ -43,30 +45,6 @@ export interface Order {
   note?: string;
   tracking_code?: string;
   estimated_delivery?: string;
-  is_reviewed?: boolean;
-}
-
-export interface Review {
-  id: number;
-  order_id: number;
-  product_id: number;
-  buyer_id: string;
-  buyer_name?: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-}
-
-export interface Message {
-  id: number;
-  order_id?: number | null; 
-  product_id?: number | null; // Nâng cấp: Hỗ trợ chat tư vấn sản phẩm
-  sender_id: string;
-  receiver_id: string;
-  content: string;
-  created_at: string;
-  is_read: boolean;           // Nâng cấp: Trạng thái đã xem
-  status?: 'sending' | 'sent' | 'error'; // Nâng cấp: Trạng thái UI (không lưu DB)
 }
 
 export interface Notification {
@@ -74,7 +52,7 @@ export interface Notification {
   user_id: string;
   order_id: number;
   message: string;
-  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order' | 'promo' | 'system' | 'review_requested' | 'chat_message';
+  type: 'order_confirmed' | 'order_shipped' | 'order_completed' | 'new_order' | 'promo' | 'system';
   is_read: boolean;
   created_at: string;
 }
